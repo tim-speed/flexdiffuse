@@ -19,15 +19,14 @@ def preprocess(image: Image | Any) -> torch.Tensor:
     w, h = image.size
     if w > MAX_SINGLE_DIM and h > MAX_SINGLE_DIM:
         if h > w:
-            w = int(w / (h / MAX_SINGLE_DIM))
+            w = (int(w / (h / MAX_SINGLE_DIM)) // 64) * 64
             h = MAX_SINGLE_DIM
         elif w > h:
-            h = int(h / (w / MAX_SINGLE_DIM))
+            h = (int(h / (w / MAX_SINGLE_DIM)) // 64) * 64
             w = MAX_SINGLE_DIM
         else:
             h = MAX_SINGLE_DIM
             w = MAX_SINGLE_DIM
-    w, h = map(lambda x: x - x % 32, (w, h))
     image = image.resize((w, h), resample=LANCZOS)
     image = image.convert('RGB')
     image = np.array(image).astype(np.float32) / 255.0

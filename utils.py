@@ -80,9 +80,18 @@ class Runner():
             samples: int = 1,
             seed: Optional[int] = None):
 
+        fp = f'i2i_ds-{int(strength * 100)}' if init_image else 't2i'
+        if guide_image:
+            fp += (f'_ig-{int(prompt_text_vs_image * 100)}'
+                   f'_svs-{int(guide_image_style_vs_subject * 100)}'
+                   f'_im-{guide_image_mode:d}')
+        fp += f'_st-{steps}_gs-{int(guidance_scale)}'
+
         if not seed:
             seed = int(torch.randint(0, MAX_SEED, (1,))[0])
             assert seed is not None
+        else:
+            fp += f'_se-{seed}'
         self.generator.manual_seed(seed)
 
         guide_embeds = self.guide.embeds(
@@ -109,11 +118,11 @@ class Runner():
                 images = output['sample'] # type: ignore
                 self.eta = time() - stime
                 for i, img in enumerate(images):
-                    img.save(f'{output_dir}/{ms_time:>013d}_{i:>02d}.png',
+                    img.save(f'{output_dir}/{ms_time:>013d}_{i:>02d}_{fp}.png',
                              format='png')
             all_images.extend(images)
 
         ms_time = int(time() * 1000)
         grid = image_grid(all_images)
-        grid.save(f'{grid_dir}/{ms_time:>013d}.png', format='png')
+        grid.save(f'{grid_dir}/{ms_time:>013d}_{fp}.png', format='png')
         return all_images, grid

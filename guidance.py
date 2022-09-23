@@ -11,6 +11,9 @@ from transformers.models.clip.tokenization_clip import CLIPTokenizer
 CLIP_IMAGE_SIZE = 224
 MAX_SINGLE_DIM = 512 # for stable diffusion image
 
+GUIDE_ORDER_TEXT = 0
+GUIDE_ORDER_ALIGN = 1
+
 
 def preprocess(image: Image | Any) -> torch.Tensor:
     w, h = image.size
@@ -45,14 +48,14 @@ class Guide():
     def embeds(self,
                prompt: str | List[str] = '',
                guide_image: Image | None = None,
-               prompt_text_vs_image: float = 0.5) -> torch.Tensor:
+               prompt_text_vs_image: float = 0.5,
+               guide_image_style_vs_subject: float = 0.5,
+               guide_image_mode: int = GUIDE_ORDER_TEXT) -> torch.Tensor:
 
         if isinstance(prompt, str):
             prompt = prompt.strip()
-            batch_size = 1
         elif isinstance(prompt, list):
             prompt = [ss for ss in (s.strip() for s in prompt) if ss]
-            batch_size = len(prompt)
         else:
             raise ValueError(
                 f'`prompt` has to be of type `str` or `list` but is {type(prompt)}'
@@ -119,57 +122,92 @@ class Guide():
             #     guide_image # type: ignore
             # )
 
-        if text_embeddings is not None:
-            if image_embeddings is not None:
-                assert text_input is not None
-                imgft = image_embeddings / image_embeddings.norm(dim=-1,
-                                                                 keepdim=True)
-                txtft = text_embeddings / text_embeddings.norm(dim=-1,
-                                                               keepdim=True)
-                # All token matches is 256 * 77: imf_i, tf_i alignment
-                all_matches: List[Tuple[int, int, float]] = []
-                # TODO: Can probably vectorize this
-                for i, iimgft in enumerate(imgft[0, :]):
-                    iimgft = iimgft.unsqueeze(0)
-                    similarity = (100.0 * (iimgft @ txtft.mT)).softmax(dim=-1)
-                    all_matches += [(i, ii, v.item())
-                                    for ii, v in enumerate(similarity[0, 0])]
+        def _tween(img_emb: torch.Tensor,
+                   txt_emb: torch.Tensor) -> torch.Tensor:
+            imgft = img_emb / img_emb.norm(dim=-1, keepdim=True)
+            txtft = txt_emb / txt_emb.norm(dim=-1, keepdim=True)
+            # All token matches is 256 * 77: imf_i, tf_i alignment
+            all_matches: List[Tuple[int, int, float]] = []
+            # TODO: Can probably vectorize this
+            for i, iimgft in enumerate(imgft[0, :]):
+                iimgft = iimgft.unsqueeze(0)
+                similarity = (100.0 * (iimgft @ txtft.mT)).softmax(dim=-1)
+                all_matches += [
+                    (i, ii, v.item()) for ii, v in enumerate(similarity[0, 0])
+                ]
+            if guide_image_mode == GUIDE_ORDER_TEXT:
+                # sort: asc text feature, desc alignment, asc image feature
+                all_matches.sort(key=lambda t: (t[1], -t[2], t[0]))
+            else:
                 # sort: desc alignment, asc text feature, asc image feature
                 all_matches.sort(key=lambda t: (-t[2], t[1], t[0]))
-                # Now map the img token per text token, without reusing tokens
-                mapped_tokens = np.zeros((CLIP_MAX_TOKENS, 2))
-                img_toks_used: Set[int] = set()
-                # TODO: Optimize
-                for img_i, txt_i, s in all_matches:
-                    if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
-                        continue
-                    mapped_tokens[txt_i] = (img_i, s)
-                    img_toks_used.add(img_i)
-                # Print the result
-                print(f'Image Feature and Token alignment:')
-                for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                    print(f'TxtTok {txt_i:>02d} ImgTok '
-                          f'{int(img_i):>02d} {100 * s:.2f}%')
-                # TODO: Max Guidance options
-                max_guidance = 1 - mapped_tokens[:, 1].mean()
-                image_guidance = max_guidance * prompt_text_vs_image
-                text_guidance = 1.0 - image_guidance
-                print(f'Guidance Max: {max_guidance:.2%}, Image: '
-                      f'{image_guidance:.2%}, Text: {text_guidance:.2%}')
-                # TODO: Map options AKA sort.. ( by aligment (Current), by Text Order (additional) )
-                # TODO: Threshold for activation?
-                # TODO: Linear scale downward for less aligned tokens?
-                # tween text and image embeddings
-                clip_embeddings = text_embeddings * text_guidance
-                for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                    clip_embeddings[0, txt_i] += image_embeddings[
-                        0, int(img_i)] * image_guidance
-                # clip_embeddings = text_embeddings.roll(1, 1)
-                # clip_embeddings[0, 0] = image_embeddings[0]
-                print('Tweening text and image embeddings:',
-                      image_embeddings.shape, ' text shape:',
-                      text_embeddings.shape, ' embed shape:',
-                      clip_embeddings.shape)
+            # Now map the img token per text token, without reusing tokens
+            mapped_tokens = np.zeros((CLIP_MAX_TOKENS, 2))
+            img_toks_used: Set[int] = set()
+            # TODO: Optimize
+            for img_i, txt_i, s in all_matches:
+                if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
+                    continue
+                mapped_tokens[txt_i] = (img_i, s)
+                img_toks_used.add(img_i)
+            # Print the result
+            print(f'Image Feature and Token alignment:')
+            for txt_i, (img_i, s) in enumerate(mapped_tokens):
+                print(f'TxtTok {txt_i:>02d} ImgTok '
+                      f'{int(img_i):>02d} {100 * s:.2f}%')
+            # TODO: Max Guidance options
+            max_guidance = 1 - mapped_tokens[:, 1].mean()
+            image_guidance = max_guidance * prompt_text_vs_image
+            text_guidance = 1.0 - image_guidance
+            style_guidance = 1.0 - guide_image_style_vs_subject
+            subject_guidance = guide_image_style_vs_subject
+            print(
+                f'Guidance Max: {max_guidance:.2%}, '
+                f'Image: {image_guidance:.2%}, Text: {text_guidance:.2%}, '
+                f'Style: {style_guidance:.2%}, Subject: {subject_guidance:.2%}')
+            # TODO: Threshold for activation? on style vs subject?? OR:
+            # TODO: Adjust linear function weights based on where subject vs
+            #   style align from mappings similarities.
+            # Create linear weights, subject_guidance 1.0 == [1.0 ... 0.0]
+            #   style_guidance 1.0 == [0.0 ... 1.0]
+            # TODO: Vectorize:
+            linear_weights = torch.ones((CLIP_MAX_TOKENS,))
+            if guide_image_style_vs_subject > 0.5:
+                # Front to back reduction
+                slope = subject_guidance / CLIP_MAX_TOKENS
+                for i in range(1, CLIP_MAX_TOKENS):
+                    linear_weights[i] -= slope * i
+            elif guide_image_style_vs_subject < 0.5:
+                # Back to front reduction
+                slope = style_guidance / CLIP_MAX_TOKENS
+                for i in range(2, CLIP_MAX_TOKENS + 1):
+                    linear_weights[-i] -= slope * i
+            # tween text and image embeddings
+            # TODO: Vectorize:
+            clip_embeddings = torch.zeros_like(txt_emb)
+            for txt_i, (img_i, s) in enumerate(mapped_tokens):
+                ig = image_guidance * linear_weights[txt_i]
+                tg = 1.0 - ig
+                clip_embeddings[0, txt_i] = ((txt_emb[0, txt_i] * tg) +
+                                             (img_emb[0, int(img_i)] * ig))
+            # clip_embeddings = txt_emb.roll(1, 1)
+            # clip_embeddings[0, 0] = img_emb[0]
+            print('Tweened text and image embeddings:', img_emb.shape,
+                  ' text shape:', txt_emb.shape, ' embed shape:',
+                  clip_embeddings.shape)
+            return clip_embeddings
+
+        if text_embeddings is not None:
+            if image_embeddings is not None:
+                if text_embeddings.shape[0] > 1:
+                    # Batch
+                    clip_embeddings = text_embeddings.clone()
+                    # TODO: Vectorize??
+                    for i, txt_emb in enumerate(text_embeddings):
+                        clip_embeddings[i] = _tween(image_embeddings, txt_emb)
+                else:
+                    # Solo
+                    clip_embeddings = _tween(image_embeddings, text_embeddings)
             else:
                 clip_embeddings: torch.Tensor = text_embeddings
         else:

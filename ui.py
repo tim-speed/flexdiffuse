@@ -10,10 +10,12 @@ runner = utils.Runner(
 
 
 def run(prompt, init_image, guide_image, height, width, prompt_text_vs_image,
-        strength, steps, guidance_scale, samples, seed):
+        guide_image_bg_fg, guide_image_mode, strength, steps, guidance_scale,
+        samples, seed):
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
-                            prompt_text_vs_image, strength, steps,
-                            guidance_scale, samples, seed)
+                            prompt_text_vs_image, guide_image_bg_fg,
+                            guide_image_mode, strength, steps, guidance_scale,
+                            samples, seed)
     return imgs
 
 
@@ -21,10 +23,8 @@ css = '''
     textarea {
         max-height: 60px;
     }
-    button {
+    div.gr-block button.gr-button {
         max-width: 200px;
-        background-image: none;
-        background-color: #C83;
     }
     #gallery>div>.h-full {
         min-height: 20rem;
@@ -46,10 +46,12 @@ with block:
                     rounded=(True, False, False, True),
                     container=False,
                 )
-                generate: gr.Button = gr.Button('Generate image').style(
-                    margin=False,
-                    rounded=(False, True, True, False),
-                ) # type: ignore
+                generate: gr.Button = gr.Button(value='Generate image',
+                                                variant='primary').style(
+                                                    margin=False,
+                                                    rounded=(False, True, True,
+                                                             False),
+                                                ) # type: ignore
             with gr.Row().style(mobile_collapse=False, equal_height=True):
                 init_image = gr.Image(label='Initial image',
                                       source='upload',
@@ -69,8 +71,21 @@ with block:
             prompt_text_vs_image = gr.Slider(label='Image Guidance from Text',
                                              minimum=0,
                                              maximum=1,
-                                             value=0.5,
+                                             value=0.25,
                                              step=0.01)
+
+        with gr.Row():
+            steps = gr.Slider(label='Steps',
+                              minimum=8,
+                              maximum=50,
+                              value=30,
+                              step=2)
+            guide_image_bg_fg = gr.Slider(
+                label='Image Style vs Subject Guidance',
+                minimum=0,
+                maximum=1,
+                value=0.8,
+                step=0.01)
 
         with gr.Row():
             samples = gr.Slider(label='Images',
@@ -78,24 +93,21 @@ with block:
                                 maximum=16,
                                 value=4,
                                 step=1)
-            steps = gr.Slider(label='Steps',
-                              minimum=8,
-                              maximum=50,
-                              value=10,
-                              step=2)
+            guide_image_mode = gr.Radio(label='Mapping Priority',
+                                        choices=['Text Order', 'Optimal Fit'],
+                                        value='Text Order',
+                                        type='index')
+
         with gr.Row():
             guidance_scale = gr.Slider(label='Guidance Scale',
                                        minimum=0,
-                                       maximum=50,
+                                       maximum=20,
                                        value=8,
                                        step=0.5)
-            seed = gr.Slider(
-                label='Seed',
-                minimum=0,
-                maximum=2147483647,
-                step=1,
-                value=0,
-            )
+            seed = gr.Number(label='Seed',
+                             precision=0,
+                             value=0,
+                             interactive=True)
 
         with gr.Group():
             height = gr.Slider(minimum=64,
@@ -116,15 +128,17 @@ with block:
         prompt.submit(run,
                       inputs=[
                           prompt, init_image, guide_image, height, width,
-                          prompt_text_vs_image, strength, steps, guidance_scale,
+                          prompt_text_vs_image, guide_image_bg_fg,
+                          guide_image_mode, strength, steps, guidance_scale,
                           samples, seed
                       ],
                       outputs=[gallery])
         generate.click(run,
                        inputs=[
                            prompt, init_image, guide_image, height, width,
-                           prompt_text_vs_image, strength, steps,
-                           guidance_scale, samples, seed
+                           prompt_text_vs_image, guide_image_bg_fg,
+                           guide_image_mode, strength, steps, guidance_scale,
+                           samples, seed
                        ],
                        outputs=[gallery])
 

@@ -72,6 +72,8 @@ class Runner():
             guide_image: Optional[Image.Image] = None,
             init_size: Tuple[int, int] = (512, 512),
             prompt_text_vs_image: float = 0.5,
+            guide_image_style_vs_subject: float = 0.5,
+            guide_image_mode: int = 0,
             strength: float = 0.6,
             steps: int = 10,
             guidance_scale: float = 8,
@@ -86,7 +88,9 @@ class Runner():
         guide_embeds = self.guide.embeds(
             prompt=prompt,
             guide_image=guide_image,
-            prompt_text_vs_image=prompt_text_vs_image)
+            prompt_text_vs_image=prompt_text_vs_image,
+            guide_image_style_vs_subject=guide_image_style_vs_subject,
+            guide_image_mode=guide_image_mode)
 
         all_images = []
         for _ in range(samples):

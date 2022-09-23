@@ -43,6 +43,10 @@ def image_grid(imgs: Sequence[Image.Image]):
 
 class Runner():
     def __init__(self, local: bool = True) -> None:
+        if local:
+            print('Running local mode only, to download models add --dl')
+        else:
+            print('Connecting to huggingface to check models...')
         assert FlexPipeline.from_pretrained is not None
 
         clip = CLIPModel.from_pretrained(clip_model,

@@ -1,10 +1,12 @@
 '''Simple Test UI'''
+import sys
 from turtle import width
 import gradio as gr
 
 import utils
 
-runner = utils.Runner()
+runner = utils.Runner(
+    not [s for s in sys.argv[1:] if 'dl' in s or 'download' in s])
 
 
 def run(prompt, init_image, guide_image, height, width, prompt_text_vs_image,

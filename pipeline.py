@@ -334,7 +334,7 @@ class FlexPipeline(DiffusionPipeline):
             )
 
             last_hidden_state = encoder_outputs[0]
-            pooled_output = last_hidden_state[:, :CLIP_MAX_TOKENS, :]
+            pooled_output = last_hidden_state[:, :, :]
             pooled_output = self.clip.vision_model.post_layernorm(pooled_output)
 
             # pooled_output = vision_outputs[1] # pooled_output
@@ -351,8 +351,9 @@ class FlexPipeline(DiffusionPipeline):
                                                                  keepdim=True)
                 txtft = text_embeddings / text_embeddings.norm(dim=-1,
                                                                keepdim=True)
-                # All token matches is 77 ^ 2: imf_i, tf_i, alignment
+                # All token matches is 256 * 77: imf_i, tf_i alignment
                 all_matches: List[Tuple[int, int, float]] = []
+                # TODO: Can probably vectorize this
                 for i, iimgft in enumerate(imgft[0, :]):
                     iimgft = iimgft.unsqueeze(0)
                     similarity = (100.0 * (iimgft @ txtft.mT)).softmax(dim=-1)
@@ -363,6 +364,7 @@ class FlexPipeline(DiffusionPipeline):
                 # Now map the img token per text token, without reusing tokens
                 mapped_tokens = np.zeros((CLIP_MAX_TOKENS, 2))
                 img_toks_used: Set[int] = set()
+                # TODO: Optimize
                 for img_i, txt_i, s in all_matches:
                     if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
                         continue
@@ -373,10 +375,12 @@ class FlexPipeline(DiffusionPipeline):
                 for txt_i, (img_i, s) in enumerate(mapped_tokens):
                     print(f'TxtTok {txt_i:>02d} ImgTok '
                           f'{int(img_i):>02d} {100 * s:.2f}%')
-                max_guidance = 1 - max(mapped_tokens[:, 1])
+                # TODO: Max Guidance options
+                max_guidance = 1 - mapped_tokens[:, 1].mean()
                 image_guidance = max_guidance * prompt_text_vs_image
                 text_guidance = 1.0 - image_guidance
-                # TODO: COMPARE ALL 256 IMAGE EMBEDS SINCE WE'RE MAPPING TO TEXT ANYWAY
+                print(f'Guidance Max: {max_guidance:.2%}, Image: '
+                      f'{image_guidance:.2%}, Text: {text_guidance:.2%}')
                 # TODO: Map options AKA sort.. ( by aligment (Current), by Text Order (additional) )
                 # TODO: Threshold for activation?
                 # TODO: Linear scale downward for less aligned tokens?
@@ -395,7 +399,13 @@ class FlexPipeline(DiffusionPipeline):
                 clip_embeddings: torch.Tensor = text_embeddings
         else:
             assert image_embeddings is not None
-            clip_embeddings: torch.Tensor = image_embeddings
+            # Select the first CLIP_MAX_TOKENS image embedding tokens only
+            # NOTE: This is not good guidance, StableDiffusion wasn't trained
+            #   for this. We need to map to prompts.
+            # TODO: Build a model that can resequence image embeddings to
+            #   a similar structure as text, SEE: BLIP ?? No need for text tho.
+            clip_embeddings: torch.Tensor = image_embeddings[:, :
+                                                             CLIP_MAX_TOKENS, :]
 
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`

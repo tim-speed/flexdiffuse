@@ -1,12 +1,10 @@
 '''Pipeline, a modification of Img2Img from huggingface/diffusers'''
 import inspect
 import warnings
-from typing import List, Optional, Set, Tuple, Union
+from typing import Optional, Tuple, Union
 
-import numpy as np
 import torch
-from torchvision.transforms.functional import (center_crop, normalize, resize,
-                                               InterpolationMode)
+
 import PIL
 import PIL.Image
 
@@ -20,30 +18,7 @@ from diffusers.schedulers import (DDIMScheduler, LMSDiscreteScheduler,
                                   PNDMScheduler)
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 
-CLIP_MAX_TOKENS = 77
-CLIP_IMAGE_SIZE = 224
-MAX_SINGLE_DIM = 512 # for stable diffusion image
-
-
-def preprocess(image):
-    w, h = image.size
-    if w > MAX_SINGLE_DIM and h > MAX_SINGLE_DIM:
-        if h > w:
-            w = int(w / (h / MAX_SINGLE_DIM))
-            h = MAX_SINGLE_DIM
-        elif w > h:
-            h = int(h / (w / MAX_SINGLE_DIM))
-            w = MAX_SINGLE_DIM
-        else:
-            h = MAX_SINGLE_DIM
-            w = MAX_SINGLE_DIM
-    w, h = map(lambda x: x - x % 32, (w, h))
-    image = image.resize((w, h), resample=PIL.Image.LANCZOS)
-    image = image.convert('RGB')
-    image = np.array(image).astype(np.float32) / 255.0
-    image = image[None].transpose(0, 3, 1, 2)
-    image = torch.from_numpy(image)
-    return 2.0 * image - 1.0
+from guidance import preprocess
 
 
 class FlexPipeline(DiffusionPipeline):
@@ -135,13 +110,10 @@ class FlexPipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Union[str, List[str]] = '',
+        clip_embeddings: torch.Tensor,
         init_image: Optional[Union[torch.Tensor, torch.FloatTensor,
                                    PIL.Image.Image]] = None,
-        guide_image: Optional[Union[torch.Tensor, torch.FloatTensor,
-                                    PIL.Image.Image]] = None,
         init_size: Tuple[int, int] = (512, 512),
-        prompt_text_vs_image: float = 0.5,
         strength: float = 0.6,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
@@ -153,19 +125,13 @@ class FlexPipeline(DiffusionPipeline):
         r'''
         Function invoked when calling the pipeline for generation.
         Args:
-            prompt (`str` or `List[str]`):
-                The prompt or prompts to guide the image generation.
+            clip_embeddings (`torch.Tensor`):
+                The prompt embeddings to guide image generation.
             init_image (`torch.FloatTensor` or `PIL.Image.Image`):
                 `Image`, or tensor representing an image batch, that will be used as the starting point for the
                 process.
-            guide_image (`torch.FloatTensor` or `PIL.Image.Image`):
-                `Image`, or tensor representing an image batch, that will be used as the guidance for the
-                process.
             init_size (`Tuple[int, int]`):
-                height and width for the output image initial latents if init_image not provided
-            prompt_text_vs_image (`float`):
-                value between 0.0 and 1.0 of how much to take text==0.0 and image==1.0, the default value of 0.5 will
-                take an even weight of embedding values from both 
+                height and width for the output image initial latents if init_image not provided 
             strength (`float`, *optional*, defaults to 0.8):
                 Conceptually, indicates how much to transform the reference `init_image`. Must be between 0 and 1.
                 `init_image` will be used as a starting point, adding more noise to it the larger the `strength`. The
@@ -199,21 +165,11 @@ class FlexPipeline(DiffusionPipeline):
             When returning a tuple, the first element is a list with the generated images, and the second element is
             False.
         '''
-        if isinstance(prompt, str):
-            batch_size = 1
-        elif isinstance(prompt, list):
-            batch_size = len(prompt)
-        else:
-            raise ValueError(
-                f'`prompt` has to be of type `str` or `list` but is {type(prompt)}'
-            )
-
         if strength < 0 or strength > 1:
             raise ValueError(
                 f'The value of strength should in [0.0, 1.0] but is {strength}')
 
-        if not (prompt or guide_image):
-            raise ValueError('No prompt, or guide image provided.')
+        batch_size = clip_embeddings.shape[0]
 
         # set timesteps
         self.scheduler.set_timesteps(num_inference_steps)
@@ -282,131 +238,6 @@ class FlexPipeline(DiffusionPipeline):
             # No init image so we start from 0
             t_start = 0
 
-        text_input = None
-        text_embeddings: Optional[torch.Tensor] = None
-        image_embeddings: Optional[torch.Tensor] = None
-        if prompt:
-            # get prompt text embeddings
-            text_input = self.tokenizer(
-                prompt,
-                padding='max_length',
-                max_length=self.tokenizer.model_max_length,
-                truncation=True,
-                return_tensors='pt',
-            )
-            text_embeddings = self.clip.text_model(
-                text_input.input_ids.to(self.device))[0]
-        if guide_image is not None:
-            if isinstance(guide_image, PIL.Image.Image):
-                guide_image = preprocess(guide_image)
-            crop_size = min(guide_image.shape[-2:])
-            guide_image = center_crop(guide_image, [crop_size, crop_size])
-            guide_image = resize(guide_image,
-                                 [CLIP_IMAGE_SIZE, CLIP_IMAGE_SIZE],
-                                 interpolation=InterpolationMode.BICUBIC,
-                                 antialias=True)
-            guide_image = normalize(guide_image,
-                                    [0.48145466, 0.4578275, 0.40821073],
-                                    [0.26862954, 0.26130258, 0.27577711])
-
-            # dbgim = (guide_image / 2 + 0.5).clamp(0, 1)
-            # dbgim = dbgim.cpu().permute(0, 2, 3, 1).numpy()
-            # dbgim = self.numpy_to_pil(dbgim)
-            # dbgim[0].save('./guide_image.png', format='png')
-
-            guide_image = guide_image.to(self.device)
-
-            # vision_outputs = self.clip.vision_model(
-            #     pixel_values=guide_image,
-            #     output_attentions=True,
-            #     output_hidden_states=True,
-            #     return_dict=True,
-            # )
-
-            hidden_states = self.clip.vision_model.embeddings(guide_image)
-            hidden_states = self.clip.vision_model.pre_layrnorm(hidden_states)
-
-            encoder_outputs = self.clip.vision_model.encoder(
-                inputs_embeds=hidden_states,
-                output_attentions=False,
-                output_hidden_states=False,
-                return_dict=return_dict,
-            )
-
-            last_hidden_state = encoder_outputs[0]
-            pooled_output = last_hidden_state[:, :, :]
-            pooled_output = self.clip.vision_model.post_layernorm(pooled_output)
-
-            # pooled_output = vision_outputs[1] # pooled_output
-            image_embeddings = self.clip.visual_projection(pooled_output)
-
-            # image_embeddings = self.clip.get_image_features(
-            #     guide_image # type: ignore
-            # )
-
-        if text_embeddings is not None:
-            if image_embeddings is not None:
-                assert text_input is not None
-                imgft = image_embeddings / image_embeddings.norm(dim=-1,
-                                                                 keepdim=True)
-                txtft = text_embeddings / text_embeddings.norm(dim=-1,
-                                                               keepdim=True)
-                # All token matches is 256 * 77: imf_i, tf_i alignment
-                all_matches: List[Tuple[int, int, float]] = []
-                # TODO: Can probably vectorize this
-                for i, iimgft in enumerate(imgft[0, :]):
-                    iimgft = iimgft.unsqueeze(0)
-                    similarity = (100.0 * (iimgft @ txtft.mT)).softmax(dim=-1)
-                    all_matches += [(i, ii, v.item())
-                                    for ii, v in enumerate(similarity[0, 0])]
-                # sort: desc alignment, asc text feature, asc image feature
-                all_matches.sort(key=lambda t: (-t[2], t[1], t[0]))
-                # Now map the img token per text token, without reusing tokens
-                mapped_tokens = np.zeros((CLIP_MAX_TOKENS, 2))
-                img_toks_used: Set[int] = set()
-                # TODO: Optimize
-                for img_i, txt_i, s in all_matches:
-                    if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
-                        continue
-                    mapped_tokens[txt_i] = (img_i, s)
-                    img_toks_used.add(img_i)
-                # Print the result
-                print(f'Image Feature and Token alignment:')
-                for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                    print(f'TxtTok {txt_i:>02d} ImgTok '
-                          f'{int(img_i):>02d} {100 * s:.2f}%')
-                # TODO: Max Guidance options
-                max_guidance = 1 - mapped_tokens[:, 1].mean()
-                image_guidance = max_guidance * prompt_text_vs_image
-                text_guidance = 1.0 - image_guidance
-                print(f'Guidance Max: {max_guidance:.2%}, Image: '
-                      f'{image_guidance:.2%}, Text: {text_guidance:.2%}')
-                # TODO: Map options AKA sort.. ( by aligment (Current), by Text Order (additional) )
-                # TODO: Threshold for activation?
-                # TODO: Linear scale downward for less aligned tokens?
-                # tween text and image embeddings
-                clip_embeddings = text_embeddings * text_guidance
-                for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                    clip_embeddings[0, txt_i] += image_embeddings[
-                        0, int(img_i)] * image_guidance
-                # clip_embeddings = text_embeddings.roll(1, 1)
-                # clip_embeddings[0, 0] = image_embeddings[0]
-                print('Tweening text and image embeddings:',
-                      image_embeddings.shape, ' text shape:',
-                      text_embeddings.shape, ' embed shape:',
-                      clip_embeddings.shape)
-            else:
-                clip_embeddings: torch.Tensor = text_embeddings
-        else:
-            assert image_embeddings is not None
-            # Select the first CLIP_MAX_TOKENS image embedding tokens only
-            # NOTE: This is not good guidance, StableDiffusion wasn't trained
-            #   for this. We need to map to prompts.
-            # TODO: Build a model that can resequence image embeddings to
-            #   a similar structure as text, SEE: BLIP ?? No need for text tho.
-            clip_embeddings: torch.Tensor = image_embeddings[:, :
-                                                             CLIP_MAX_TOKENS, :]
-
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
@@ -416,11 +247,10 @@ class FlexPipeline(DiffusionPipeline):
             # For classifier free guidance, we need to do two forward passes.
             # Here we concatenate the unconditional and text embeddings into a single batch
             # to avoid doing two forward passes
-            # if image_embeddings is not None and text_embeddings is not None:
-            #     clip_embeddings = torch.cat([image_embeddings, clip_embeddings])
-            # else:
-            max_length = (text_input.input_ids.shape[-1]
-                          if text_input is not None else CLIP_MAX_TOKENS)
+            max_length = clip_embeddings.shape[1]
+            # TODO: Remove this assert
+            assert max_length == 77
+            # TODO: Support negative embeddings?
             uncond_input = self.tokenizer([''] * batch_size,
                                           padding='max_length',
                                           max_length=max_length,

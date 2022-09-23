@@ -12,6 +12,7 @@ from transformers.models.clip.modeling_clip import CLIPModel
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipeline
 from diffusers.schedulers import DDIMScheduler
 
+from guidance import Guide
 from pipeline import FlexPipeline
 
 MAX_SEED = 2147483647
@@ -42,7 +43,7 @@ def image_grid(imgs: Sequence[Image.Image]):
 
 
 class Runner():
-    def __init__(self, local: bool = True) -> None:
+    def __init__(self, local: bool = True, device: str = 'cuda') -> None:
         if local:
             print('Running local mode only, to download models add --dl')
         else:
@@ -59,15 +60,16 @@ class Runner():
         # self.scheduler = scheduler = DDIMScheduler(
         #     beta_start=0.00085, beta_end=0.012, beta_schedule='scaled_linear')
         self.pipe = FlexPipeline(sd.vae, clip, sd.tokenizer, sd.unet,
-                                 sd.scheduler).to('cuda')
+                                 sd.scheduler).to(device)
         self.eta = 0
+        self.guide = Guide(clip, self.pipe.tokenizer, device)
+        self.device = device
+        self.generator = torch.Generator(device=device)
 
     def gen(self,
             prompt: Union[str, List[str]] = '',
-            init_image: Optional[Union[torch.Tensor, torch.FloatTensor,
-                                       Image.Image]] = None,
-            guide_image: Optional[Union[torch.Tensor, torch.FloatTensor,
-                                        Image.Image]] = None,
+            init_image: Optional[Image.Image] = None,
+            guide_image: Optional[Image.Image] = None,
             init_size: Tuple[int, int] = (512, 512),
             prompt_text_vs_image: float = 0.5,
             strength: float = 0.6,
@@ -76,29 +78,30 @@ class Runner():
             samples: int = 1,
             seed: Optional[int] = None):
 
-        generator = torch.Generator(device='cuda')
         if not seed:
             seed = int(torch.randint(0, MAX_SEED, (1,))[0])
             assert seed is not None
-        generator.manual_seed(seed)
+        self.generator.manual_seed(seed)
+
+        guide_embeds = self.guide.embeds(
+            prompt=prompt,
+            guide_image=guide_image,
+            prompt_text_vs_image=prompt_text_vs_image)
 
         all_images = []
         for _ in range(samples):
-            with autocast('cuda'):
+            with autocast(self.device):
                 stime = time()
                 ms_time = int(stime * 1000)
                 with torch.no_grad():
-                    output = self.pipe(
-                        prompt=prompt,
-                        init_image=init_image,
-                        guide_image=guide_image,
-                        init_size=init_size,
-                        prompt_text_vs_image=prompt_text_vs_image,
-                        strength=strength,
-                        num_inference_steps=steps,
-                        guidance_scale=guidance_scale,
-                        generator=generator,
-                        eta=self.eta)
+                    output = self.pipe(clip_embeddings=guide_embeds,
+                                       init_image=init_image,
+                                       init_size=init_size,
+                                       strength=strength,
+                                       num_inference_steps=steps,
+                                       guidance_scale=guidance_scale,
+                                       generator=self.generator,
+                                       eta=self.eta)
                 images = output['sample'] # type: ignore
                 self.eta = time() - stime
                 for i, img in enumerate(images):

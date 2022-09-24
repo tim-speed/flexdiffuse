@@ -218,7 +218,7 @@ class Guide():
             #   backend / style features
             img_weights = torch.linspace(
                 0.0, 1.0, steps=CLIP_MAX_TOKENS) * guide_image_linear
-            if guide_image_clustered > 0:
+            if guide_image_clustered != 0:
                 # Cluster by indentifying all peaks that are over avg_similarity
                 #   and then traversing downward into the valleys as style
                 # Similarity Peaks == Subject, Valleys == Style
@@ -245,14 +245,23 @@ class Guide():
                     clustered_weights = _traverse_a_to_b(
                         peaks, valleys, torch.ones(
                             (CLIP_MAX_TOKENS,)), 1.0) * guide_image_clustered
-                    img_weights = torch.maximum(img_weights, clustered_weights)
+                    if guide_image_linear >= 0 and guide_image_clustered >= 0:
+                        img_weights = torch.maximum(img_weights,
+                                                    clustered_weights)
+                    elif guide_image_linear >= 0:
+                        # Fighting eachother
+                        # TODO: might be a better way?
+                        img_weights += clustered_weights
+                    else:
+                        img_weights = torch.minimum(img_weights,
+                                                    clustered_weights)
             print('Image Weights:', img_weights)
             # tween text and image embeddings
             # TODO-OPT: Vectorize:
             clip_embeddings = torch.zeros_like(txt_emb)
             for txt_i, (img_i, s) in enumerate(mapped_tokens):
                 ig = image_guidance * img_weights[txt_i]
-                tg = 1.0 - ig
+                tg = 1.0 - abs(ig)
                 clip_embeddings[0, txt_i] = ((txt_emb[0, txt_i] * tg) +
                                              (img_emb[0, int(img_i)] * ig))
             # clip_embeddings = txt_emb.roll(1, 1)

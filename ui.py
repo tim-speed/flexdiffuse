@@ -62,16 +62,17 @@ with block:
                                        type='pil')
 
         with gr.Row(mobile_collapse=False, equal_height=True):
-            strength = gr.Slider(label='Diffusion Strength',
+            strength = gr.Slider(label='Diffusion Strength ( For Img2Img )',
                                  minimum=0,
                                  maximum=1,
                                  value=0.6,
                                  step=0.01)
-            prompt_text_vs_image = gr.Slider(label='Image Guidance from Text',
-                                             minimum=0,
-                                             maximum=1,
-                                             value=0.25,
-                                             step=0.01)
+            prompt_text_vs_image = gr.Slider(
+                label='Image Guidance applied to Text',
+                minimum=0,
+                maximum=1,
+                value=0.5,
+                step=0.01)
 
         with gr.Row():
             steps = gr.Slider(label='Steps',
@@ -80,33 +81,34 @@ with block:
                               value=30,
                               step=2)
             guide_image_clustered = gr.Slider(
-                label='Clustered "Match" Guidance',
-                minimum=0,
-                maximum=1,
+                label='Clustered "Match" Guidance ( -1.0 : 1.0 )',
+                minimum=-2,
+                maximum=2,
                 value=0.5,
-                step=0.01)
+                step=0.1)
 
         with gr.Row():
-            samples = gr.Slider(label='Images',
+            samples = gr.Slider(label='Batches ( Images )',
                                 minimum=1,
                                 maximum=16,
                                 value=4,
                                 step=1)
-            guide_image_linear = gr.Slider(label='Linear "Style" Guidance',
-                                           minimum=0,
-                                           maximum=1,
-                                           value=0.5,
-                                           step=0.01)
+            guide_image_linear = gr.Slider(
+                label='Linear "Style" Guidance ( -1.0 : 1.0 )',
+                minimum=-2,
+                maximum=2,
+                value=0.5,
+                step=0.1)
 
         with gr.Row():
-            guidance_scale = gr.Slider(label='Guidance Scale',
+            guidance_scale = gr.Slider(label='Guidance Scale ( Overall )',
                                        minimum=0,
                                        maximum=20,
                                        value=8,
                                        step=0.5)
             guide_image_mode = gr.Radio(label='Mapping Priority',
                                         choices=['Text Order', 'Optimal Fit'],
-                                        value='Text Order',
+                                        value='Optimal Fit',
                                         type='index')
 
         with gr.Row():

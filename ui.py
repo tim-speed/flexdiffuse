@@ -10,12 +10,12 @@ runner = utils.Runner(
 
 
 def run(prompt, init_image, guide_image, height, width, prompt_text_vs_image,
-        guide_image_bg_fg, guide_image_mode, strength, steps, guidance_scale,
-        samples, seed):
+        guide_image_func, guide_image_bg_fg, guide_image_mode, strength, steps,
+        guidance_scale, samples, seed):
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
-                            prompt_text_vs_image, guide_image_bg_fg,
-                            guide_image_mode, strength, steps, guidance_scale,
-                            samples, seed)
+                            prompt_text_vs_image, guide_image_func,
+                            guide_image_bg_fg, guide_image_mode, strength,
+                            steps, guidance_scale, samples, seed)
     return imgs
 
 
@@ -44,7 +44,6 @@ with block:
                 ).style(
                     border=(True, False, True, True),
                     rounded=(True, False, False, True),
-                    container=False,
                 )
                 generate: gr.Button = gr.Button(value='Generate image',
                                                 variant='primary').style(
@@ -80,6 +79,17 @@ with block:
                               maximum=50,
                               value=30,
                               step=2)
+            guide_image_func = gr.Radio(label='Image Guidance Mapping Function',
+                                        choices=['Linear', 'Grouped'],
+                                        value='Grouped',
+                                        type='index')
+
+        with gr.Row():
+            samples = gr.Slider(label='Images',
+                                minimum=1,
+                                maximum=16,
+                                value=4,
+                                step=1)
             guide_image_bg_fg = gr.Slider(
                 label='Image Style vs Subject Guidance',
                 minimum=0,
@@ -88,28 +98,21 @@ with block:
                 step=0.01)
 
         with gr.Row():
-            samples = gr.Slider(label='Images',
-                                minimum=1,
-                                maximum=16,
-                                value=4,
-                                step=1)
+            guidance_scale = gr.Slider(label='Guidance Scale',
+                                       minimum=0,
+                                       maximum=20,
+                                       value=8,
+                                       step=0.5)
             guide_image_mode = gr.Radio(label='Mapping Priority',
                                         choices=['Text Order', 'Optimal Fit'],
                                         value='Text Order',
                                         type='index')
 
         with gr.Row():
-            guidance_scale = gr.Slider(label='Guidance Scale',
-                                       minimum=0,
-                                       maximum=20,
-                                       value=8,
-                                       step=0.5)
             seed = gr.Number(label='Seed',
                              precision=0,
                              value=0,
                              interactive=True)
-
-        with gr.Group():
             height = gr.Slider(minimum=64,
                                maximum=2048,
                                step=64,
@@ -128,17 +131,17 @@ with block:
         prompt.submit(run,
                       inputs=[
                           prompt, init_image, guide_image, height, width,
-                          prompt_text_vs_image, guide_image_bg_fg,
-                          guide_image_mode, strength, steps, guidance_scale,
-                          samples, seed
+                          prompt_text_vs_image, guide_image_func,
+                          guide_image_bg_fg, guide_image_mode, strength, steps,
+                          guidance_scale, samples, seed
                       ],
                       outputs=[gallery])
         generate.click(run,
                        inputs=[
                            prompt, init_image, guide_image, height, width,
-                           prompt_text_vs_image, guide_image_bg_fg,
-                           guide_image_mode, strength, steps, guidance_scale,
-                           samples, seed
+                           prompt_text_vs_image, guide_image_func,
+                           guide_image_bg_fg, guide_image_mode, strength, steps,
+                           guidance_scale, samples, seed
                        ],
                        outputs=[gallery])
 

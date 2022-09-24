@@ -1,3 +1,5 @@
+from itertools import pairwise
+import math
 from typing import Any, List, Set, Tuple
 
 import numpy as np
@@ -11,8 +13,58 @@ from transformers.models.clip.tokenization_clip import CLIPTokenizer
 CLIP_IMAGE_SIZE = 224
 MAX_SINGLE_DIM = 512 # for stable diffusion image
 
+GUIDE_FUNC_LINEAR = 0
+GUIDE_FUNC_GROUPED = 1
+
 GUIDE_ORDER_TEXT = 0
 GUIDE_ORDER_ALIGN = 1
+
+
+def _traverse_a_to_b(al: List[int], bl: List[int], weights: torch.Tensor,
+                     slope: float) -> torch.Tensor:
+    '''Utility for applying linear slope adjustment on weights between points\
+        al and bl.
+
+    Args:
+        al (List[int]): The points to traverse from.
+        bl (List[int]): The points to traverse to.
+        weights (torch.Tensor): The weight of each point.
+        slope (float): Slope to apply.
+
+    Returns:
+        torch.Tensor: The weight tensor modified in place.
+    '''
+    bi = 0
+
+    def traverse_left(a: int, b: int):
+        d = a - b
+        gslope = slope / d
+        for i in range(1, d):
+            weights[a - i] -= gslope * i
+
+    def traverse_right(a: int, b: int):
+        d = b - a
+        gslope = slope / d
+        for i in range(1, d + 1):
+            weights[a + i] -= gslope * i
+
+    if bl[0] == 0:
+        # Apply full slope on left most point as our algo is right focused
+        weights[0] -= slope
+    for a in al:
+        # Left
+        b = bl[bi]
+        if b < a:
+            traverse_left(a, b)
+            bi += 1
+        # Right
+        if bi >= len(bl):
+            # Peak at end
+            break
+        b = bl[bi]
+        traverse_right(a, b)
+
+    return weights
 
 
 def preprocess(image: Image | Any) -> torch.Tensor:
@@ -48,6 +100,7 @@ class Guide():
                prompt: str | List[str] = '',
                guide_image: Image | None = None,
                prompt_text_vs_image: float = 0.5,
+               guide_image_func: int = GUIDE_FUNC_LINEAR,
                guide_image_style_vs_subject: float = 0.5,
                guide_image_mode: int = GUIDE_ORDER_TEXT) -> torch.Tensor:
 
@@ -63,7 +116,7 @@ class Guide():
         if not prompt and guide_image is None:
             raise ValueError('No prompt, or guide image provided.')
 
-        # TODO: Remove / Refactor
+        # TODO-OPT: Remove / Refactor
         CLIP_MAX_TOKENS = self.tokenizer.model_max_length
         assert CLIP_MAX_TOKENS == 77
 
@@ -127,7 +180,7 @@ class Guide():
             txtft = txt_emb / txt_emb.norm(dim=-1, keepdim=True)
             # All token matches is 256 * 77: imf_i, tf_i alignment
             all_matches: List[Tuple[int, int, float]] = []
-            # TODO: Can probably vectorize this
+            # TODO-OPT: Can probably vectorize this
             for i, iimgft in enumerate(imgft[0, :]):
                 iimgft = iimgft.unsqueeze(0)
                 similarity = (100.0 * (iimgft @ txtft.mT)).softmax(dim=-1)
@@ -143,7 +196,7 @@ class Guide():
             # Now map the img token per text token, without reusing tokens
             mapped_tokens = np.zeros((CLIP_MAX_TOKENS, 2))
             img_toks_used: Set[int] = set()
-            # TODO: Optimize
+            # TODO-OPT: Optimize
             for img_i, txt_i, s in all_matches:
                 if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
                     continue
@@ -154,8 +207,8 @@ class Guide():
             for txt_i, (img_i, s) in enumerate(mapped_tokens):
                 print(f'TxtTok {txt_i:>02d} ImgTok '
                       f'{int(img_i):>02d} {100 * s:.2f}%')
-            # TODO: Max Guidance options
-            max_guidance = 1 - mapped_tokens[:, 1].mean()
+            avg_similarity = mapped_tokens[:, 1].mean()
+            max_guidance = 1.0 - avg_similarity
             image_guidance = max_guidance * prompt_text_vs_image
             text_guidance = 1.0 - image_guidance
             style_guidance = 1.0 - guide_image_style_vs_subject
@@ -164,28 +217,63 @@ class Guide():
                 f'Guidance Max: {max_guidance:.2%}, '
                 f'Image: {image_guidance:.2%}, Text: {text_guidance:.2%}, '
                 f'Style: {style_guidance:.2%}, Subject: {subject_guidance:.2%}')
-            # TODO: Threshold for activation? on style vs subject?? OR:
-            # TODO: Adjust linear function weights based on where subject vs
-            #   style align from mappings similarities.
-            # Create linear weights, subject_guidance 1.0 == [1.0 ... 0.0]
-            #   style_guidance 1.0 == [0.0 ... 1.0]
-            # TODO: Vectorize:
-            linear_weights = torch.ones((CLIP_MAX_TOKENS,))
-            if guide_image_style_vs_subject > 0.5:
-                # Front to back reduction
-                slope = subject_guidance / CLIP_MAX_TOKENS
-                for i in range(1, CLIP_MAX_TOKENS):
-                    linear_weights[i] -= slope * i
-            elif guide_image_style_vs_subject < 0.5:
-                # Back to front reduction
-                slope = style_guidance / CLIP_MAX_TOKENS
-                for i in range(2, CLIP_MAX_TOKENS + 1):
-                    linear_weights[-i] -= slope * i
+            # TODO: Guidance slope param to make either linear or grouped
+            #   slopes quadratic .. AKA nice an smooth instead of sharp
+            img_weights = torch.ones((CLIP_MAX_TOKENS,))
+            slope = (subject_guidance
+                     if guide_image_style_vs_subject > 0.5 else style_guidance)
+            if guide_image_func == GUIDE_FUNC_LINEAR:
+                # Create linear weights, subject_guidance 1.0 == [1.0 ... 0.0]
+                #   style_guidance 1.0 == [0.0 ... 1.0]
+                # TODO-OPT: Vectorize:
+                slope /= CLIP_MAX_TOKENS
+                if guide_image_style_vs_subject > 0.5:
+                    # Front to back reduction
+                    for i in range(1, CLIP_MAX_TOKENS):
+                        img_weights[i] -= slope * i
+                elif guide_image_style_vs_subject < 0.5:
+                    # Back to front reduction
+                    for i in range(2, CLIP_MAX_TOKENS + 1):
+                        img_weights[-i] -= slope * i
+            elif guide_image_style_vs_subject != 0.5:
+                # Cluster by indentifying all peaks that are over avg_similarity
+                #   and then traversing downward into the valleys as style
+                # Similarity Peaks == Subject, Valleys == Style
+                # Slope will be calculated between peaks and valleys
+                peaks: List[int] = []
+                for txt_i, (_, s) in enumerate(mapped_tokens[1:-1], 1):
+                    if s < avg_similarity:
+                        continue
+                    if (mapped_tokens[txt_i - 1, 1] <= s >=
+                            mapped_tokens[txt_i + 1, 1]):
+                        peaks.append(txt_i)
+                # print('Grouped Peaks:', *peaks, sep='\n')
+                # TODO: Refactor this into function
+                if peaks:
+                    valleys: List[int] = []
+                    if peaks[0] != 0:
+                        valleys.append(0)
+                    for p1, p2 in pairwise(peaks):
+                        d = p2 - p1
+                        if d > 0:
+                            valleys.append(p1 + math.ceil(d / 2))
+                    if peaks[-1] != CLIP_MAX_TOKENS - 1:
+                        valleys.append(CLIP_MAX_TOKENS - 1)
+                    # print('Grouped Valleys:', *valleys, sep='\n')
+                    if guide_image_style_vs_subject > 0.5:
+                        # Peaks to Valleys
+                        img_weights = _traverse_a_to_b(peaks, valleys,
+                                                       img_weights, slope)
+                    else:
+                        # Valleys to Peaks
+                        img_weights = _traverse_a_to_b(valleys, peaks,
+                                                       img_weights, slope)
+            print('Image Weights:', img_weights)
             # tween text and image embeddings
-            # TODO: Vectorize:
+            # TODO-OPT: Vectorize:
             clip_embeddings = torch.zeros_like(txt_emb)
             for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                ig = image_guidance * linear_weights[txt_i]
+                ig = image_guidance * img_weights[txt_i]
                 tg = 1.0 - ig
                 clip_embeddings[0, txt_i] = ((txt_emb[0, txt_i] * tg) +
                                              (img_emb[0, int(img_i)] * ig))
@@ -201,7 +289,7 @@ class Guide():
                 if text_embeddings.shape[0] > 1:
                     # Batch
                     clip_embeddings = text_embeddings.clone()
-                    # TODO: Vectorize??
+                    # TODO-OPT: Vectorize??
                     for i, txt_emb in enumerate(text_embeddings):
                         clip_embeddings[i] = _tween(image_embeddings, txt_emb)
                 else:

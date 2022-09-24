@@ -72,8 +72,8 @@ class Runner():
             guide_image: Optional[Image.Image] = None,
             init_size: Tuple[int, int] = (512, 512),
             prompt_text_vs_image: float = 0.5,
-            guide_image_func: int = 0,
-            guide_image_style_vs_subject: float = 0.5,
+            guide_image_clustered: float = 0.5,
+            guide_image_linear: float = 0.5,
             guide_image_mode: int = 0,
             strength: float = 0.6,
             steps: int = 10,
@@ -84,7 +84,8 @@ class Runner():
         fp = f'i2i_ds-{int(strength * 100)}' if init_image else 't2i'
         if guide_image:
             fp += (f'_ig-{int(prompt_text_vs_image * 100)}'
-                   f'_svs-{int(guide_image_style_vs_subject * 100)}'
+                   f'_ic-{int(guide_image_clustered * 100)}'
+                   f'_il-{int(guide_image_linear * 100)}'
                    f'_im-{guide_image_mode:d}')
         fp += f'_st-{steps}_gs-{int(guidance_scale)}'
 
@@ -99,8 +100,8 @@ class Runner():
             prompt=prompt,
             guide_image=guide_image,
             prompt_text_vs_image=prompt_text_vs_image,
-            guide_image_func=guide_image_func,
-            guide_image_style_vs_subject=guide_image_style_vs_subject,
+            guide_image_clustered=guide_image_clustered,
+            guide_image_linear=guide_image_linear,
             guide_image_mode=guide_image_mode)
 
         all_images = []

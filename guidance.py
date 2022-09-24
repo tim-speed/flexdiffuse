@@ -13,9 +13,6 @@ from transformers.models.clip.tokenization_clip import CLIPTokenizer
 CLIP_IMAGE_SIZE = 224
 MAX_SINGLE_DIM = 512 # for stable diffusion image
 
-GUIDE_FUNC_LINEAR = 0
-GUIDE_FUNC_GROUPED = 1
-
 GUIDE_ORDER_TEXT = 0
 GUIDE_ORDER_ALIGN = 1
 
@@ -100,8 +97,8 @@ class Guide():
                prompt: str | List[str] = '',
                guide_image: Image | None = None,
                prompt_text_vs_image: float = 0.5,
-               guide_image_func: int = GUIDE_FUNC_LINEAR,
-               guide_image_style_vs_subject: float = 0.5,
+               guide_image_clustered: float = 0.5,
+               guide_image_linear: float = 0.5,
                guide_image_mode: int = GUIDE_ORDER_TEXT) -> torch.Tensor:
 
         if isinstance(prompt, str):
@@ -211,31 +208,17 @@ class Guide():
             max_guidance = 1.0 - avg_similarity
             image_guidance = max_guidance * prompt_text_vs_image
             text_guidance = 1.0 - image_guidance
-            style_guidance = 1.0 - guide_image_style_vs_subject
-            subject_guidance = guide_image_style_vs_subject
-            print(
-                f'Guidance Max: {max_guidance:.2%}, '
-                f'Image: {image_guidance:.2%}, Text: {text_guidance:.2%}, '
-                f'Style: {style_guidance:.2%}, Subject: {subject_guidance:.2%}')
+            print(f'Guidance Max: {max_guidance:.2%}, '
+                  f'Image: {image_guidance:.2%}, Text: {text_guidance:.2%}, '
+                  f'Clustered: {guide_image_clustered:.2%}, '
+                  f'Linear: {guide_image_linear:.2%}')
             # TODO: Guidance slope param to make either linear or grouped
             #   slopes quadratic .. AKA nice an smooth instead of sharp
-            img_weights = torch.ones((CLIP_MAX_TOKENS,))
-            slope = (subject_guidance
-                     if guide_image_style_vs_subject > 0.5 else style_guidance)
-            if guide_image_func == GUIDE_FUNC_LINEAR:
-                # Create linear weights, subject_guidance 1.0 == [1.0 ... 0.0]
-                #   style_guidance 1.0 == [0.0 ... 1.0]
-                # TODO-OPT: Vectorize:
-                slope /= CLIP_MAX_TOKENS
-                if guide_image_style_vs_subject > 0.5:
-                    # Front to back reduction
-                    for i in range(1, CLIP_MAX_TOKENS):
-                        img_weights[i] -= slope * i
-                elif guide_image_style_vs_subject < 0.5:
-                    # Back to front reduction
-                    for i in range(2, CLIP_MAX_TOKENS + 1):
-                        img_weights[-i] -= slope * i
-            elif guide_image_style_vs_subject != 0.5:
+            # Init img weights from linear slope, front to back, to amplify
+            #   backend / style features
+            img_weights = torch.linspace(
+                0.0, 1.0, steps=CLIP_MAX_TOKENS) * guide_image_linear
+            if guide_image_clustered > 0:
                 # Cluster by indentifying all peaks that are over avg_similarity
                 #   and then traversing downward into the valleys as style
                 # Similarity Peaks == Subject, Valleys == Style
@@ -247,7 +230,6 @@ class Guide():
                     if (mapped_tokens[txt_i - 1, 1] <= s >=
                             mapped_tokens[txt_i + 1, 1]):
                         peaks.append(txt_i)
-                # print('Grouped Peaks:', *peaks, sep='\n')
                 # TODO: Refactor this into function
                 if peaks:
                     valleys: List[int] = []
@@ -259,15 +241,11 @@ class Guide():
                             valleys.append(p1 + math.ceil(d / 2))
                     if peaks[-1] != CLIP_MAX_TOKENS - 1:
                         valleys.append(CLIP_MAX_TOKENS - 1)
-                    # print('Grouped Valleys:', *valleys, sep='\n')
-                    if guide_image_style_vs_subject > 0.5:
-                        # Peaks to Valleys
-                        img_weights = _traverse_a_to_b(peaks, valleys,
-                                                       img_weights, slope)
-                    else:
-                        # Valleys to Peaks
-                        img_weights = _traverse_a_to_b(valleys, peaks,
-                                                       img_weights, slope)
+                    # Peaks to Valleys
+                    clustered_weights = _traverse_a_to_b(
+                        peaks, valleys, torch.ones(
+                            (CLIP_MAX_TOKENS,)), 1.0) * guide_image_clustered
+                    img_weights = torch.maximum(img_weights, clustered_weights)
             print('Image Weights:', img_weights)
             # tween text and image embeddings
             # TODO-OPT: Vectorize:

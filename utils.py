@@ -71,7 +71,7 @@ class Runner():
             init_image: Optional[Image.Image] = None,
             guide_image: Optional[Image.Image] = None,
             init_size: Tuple[int, int] = (512, 512),
-            prompt_text_vs_image: float = 0.5,
+            guide_image_threshold: float = 0.5,
             guide_image_clustered: float = 0.5,
             guide_image_linear: float = 0.5,
             guide_image_mode: int = 0,
@@ -82,26 +82,26 @@ class Runner():
             samples: int = 1,
             seed: Optional[int] = None):
 
-        fp = f'i2i_ds-{int(strength * 100)}' if init_image else 't2i'
+        fp = f'i2i_ds{int(strength * 100)}' if init_image else 't2i'
         if guide_image:
-            fp += (f'_ig-{int(prompt_text_vs_image * 100)}'
-                   f'_ic-{int(guide_image_clustered * 100)}'
-                   f'_il-{int(guide_image_linear * 100)}'
-                   f'_im-{guide_image_mode:d}')
-        fp += f'_st-{steps}_gs-{int(guidance_scale)}'
+            fp += (f'_it{int(guide_image_threshold * 100)}'
+                   f'_ic{int(guide_image_clustered * 100)}'
+                   f'_il{int(guide_image_linear * 100)}'
+                   f'_im{guide_image_mode:d}')
+        fp += f'_st{steps}_gs{int(guidance_scale)}'
 
         if not seed:
             seed = int(torch.randint(0, MAX_SEED, (1,))[0])
             assert seed is not None
         else:
             seed = min(max(seed, 0), MAX_SEED)
-            fp += f'_se-{seed}'
+            fp += f'_se{seed}'
         self.generator.manual_seed(seed)
 
         guide_embeds = self.guide.embeds(
             prompt=prompt,
             guide_image=guide_image,
-            prompt_text_vs_image=prompt_text_vs_image,
+            guide_image_threshold=guide_image_threshold,
             guide_image_clustered=guide_image_clustered,
             guide_image_linear=guide_image_linear,
             guide_image_mode=guide_image_mode,

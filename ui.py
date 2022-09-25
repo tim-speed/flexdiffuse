@@ -9,11 +9,11 @@ runner = utils.Runner(
     not [s for s in sys.argv[1:] if 'dl' in s or 'download' in s])
 
 
-def run(prompt, init_image, guide_image, height, width, prompt_text_vs_image,
+def run(prompt, init_image, guide_image, height, width, guide_image_threshold,
         guide_image_clustered, guide_image_linear, guide_image_mode,
         guide_image_reuse, strength, steps, guidance_scale, samples, seed):
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
-                            prompt_text_vs_image, guide_image_clustered,
+                            guide_image_threshold, guide_image_clustered,
                             guide_image_linear, guide_image_mode,
                             guide_image_reuse, strength, steps, guidance_scale,
                             samples, seed)
@@ -68,12 +68,12 @@ with block:
                                  maximum=1,
                                  value=0.6,
                                  step=0.01)
-            prompt_text_vs_image = gr.Slider(
-                label='Image Guidance applied to Text',
-                minimum=0,
-                maximum=1,
+            guide_image_threshold = gr.Slider(
+                label='Threshold "Match" Guidance ( -1.0 : 1.0 )',
+                minimum=-2,
+                maximum=2,
                 value=0.5,
-                step=0.01)
+                step=0.1)
 
         with gr.Row():
             steps = gr.Slider(label='Steps',
@@ -107,20 +107,19 @@ with block:
                                        maximum=20,
                                        value=8,
                                        step=0.5)
-            with gr.Group():
-                guide_image_mode = gr.Radio(
-                    label='Mapping Priority',
-                    choices=['Text Order', 'Optimal Fit'],
-                    value='Optimal Fit',
-                    type='index')
-                guide_image_reuse = gr.Checkbox(label='Reuse Latents',
-                                                value=True)
+            guide_image_mode = gr.Radio(label='Mapping Priority',
+                                        choices=['Text Order', 'Optimal Fit'],
+                                        value='Optimal Fit',
+                                        type='index')
 
         with gr.Row():
             seed = gr.Number(label='Seed',
                              precision=0,
                              value=0,
                              interactive=True)
+            guide_image_reuse = gr.Checkbox(label='Reuse Latents', value=True)
+
+        with gr.Row():
             height = gr.Slider(minimum=64,
                                maximum=2048,
                                step=64,
@@ -139,7 +138,7 @@ with block:
         prompt.submit(run,
                       inputs=[
                           prompt, init_image, guide_image, height, width,
-                          prompt_text_vs_image, guide_image_clustered,
+                          guide_image_threshold, guide_image_clustered,
                           guide_image_linear, guide_image_mode,
                           guide_image_reuse, strength, steps, guidance_scale,
                           samples, seed
@@ -148,7 +147,7 @@ with block:
         generate.click(run,
                        inputs=[
                            prompt, init_image, guide_image, height, width,
-                           prompt_text_vs_image, guide_image_clustered,
+                           guide_image_threshold, guide_image_clustered,
                            guide_image_linear, guide_image_mode,
                            guide_image_reuse, strength, steps, guidance_scale,
                            samples, seed

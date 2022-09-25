@@ -95,7 +95,7 @@ class Guide():
     def embeds(self,
                prompt: str | List[str] = '',
                guide_image: Image | None = None,
-               prompt_text_vs_image: float = 0.5,
+               guide_image_threshold: float = 0.5,
                guide_image_clustered: float = 0.5,
                guide_image_linear: float = 0.5,
                guide_image_mode: int = GUIDE_ORDER_TEXT,
@@ -207,7 +207,7 @@ class Guide():
                       f'{int(img_i):>02d} {100 * s:.2f}%')
             avg_similarity = mapped_tokens[:, 1].mean()
             max_guidance = 1.0 - avg_similarity
-            image_guidance = max_guidance * prompt_text_vs_image
+            image_guidance = max_guidance
             text_guidance = 1.0 - image_guidance
             print(f'Guidance Max: {max_guidance:.2%}, '
                   f'Image: {image_guidance:.2%}, Text: {text_guidance:.2%}, '
@@ -256,6 +256,24 @@ class Guide():
                     else:
                         img_weights = torch.minimum(img_weights,
                                                     clustered_weights)
+            if guide_image_threshold != 0:
+                th_weights = torch.ones(
+                    (CLIP_MAX_TOKENS,)) * guide_image_threshold
+                for txt_i, (_, s) in enumerate(mapped_tokens):
+                    # TODO: Add slider for threshold similarity
+                    if s < avg_similarity:
+                        th_weights[txt_i] = 0
+                for i, (tw,
+                        iw) in enumerate(zip(th_weights, img_weights.clone())):
+                    if tw >= 0 and iw >= 0:
+                        img_weights[i] = torch.maximum(tw, iw)
+                    elif iw >= 0:
+                        # Fighting eachother
+                        # TODO: might be a better way?
+                        img_weights[i] += tw
+                    else:
+                        img_weights[i] = torch.minimum(tw, iw)
+
             print('Image Weights:', img_weights)
             # tween text and image embeddings
             # TODO-OPT: Vectorize:

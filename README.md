@@ -61,6 +61,8 @@ In general I've found these methods work well to transfer styles from portraits
 CLIP alone does not have a great understanding of the physical world, so you
 wont be able to transfer actions or scene composition.
 
+!['UI Scrennshot'](experiments/ui.png)
+
 ## Abstract
 
 Stable Diffusion is great, text prompts are alright... While powerful, they

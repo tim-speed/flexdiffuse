@@ -93,6 +93,7 @@ class Runner():
             seed = int(torch.randint(0, MAX_SEED, (1,))[0])
             assert seed is not None
         else:
+            seed = min(max(seed, 0), MAX_SEED)
             fp += f'_se-{seed}'
         self.generator.manual_seed(seed)
 

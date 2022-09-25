@@ -291,7 +291,11 @@ class Guide():
             #   for this. We need to map to prompts.
             # TODO: Build a model that can resequence image embeddings to
             #   a similar structure as text, SEE: BLIP ?? No need for text tho.
-            clip_embeddings: torch.Tensor = image_embeddings[:, :
-                                                             CLIP_MAX_TOKENS, :]
+            print('Warning: trying to guide purely from image, this does not'
+                  ' work well, as text embeddings have token order and that is'
+                  ' what Stable Diffusion\'s attention mechanism is traned for'
+                  ' not the sparse embedding pattern provided by the vision'
+                  ' model.')
+            clip_embeddings = image_embeddings[:, :CLIP_MAX_TOKENS, :]
 
         return clip_embeddings

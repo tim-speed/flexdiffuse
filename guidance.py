@@ -98,6 +98,7 @@ class Guide():
                guide_image_threshold: float = 0.5,
                guide_image_clustered: float = 0.5,
                guide_image_linear: float = 0.5,
+               guide_image_max_guidance: float = 0.5,
                guide_image_mode: int = GUIDE_ORDER_TEXT,
                guide_image_reuse: bool = True) -> torch.Tensor:
 
@@ -206,13 +207,11 @@ class Guide():
                 print(f'TxtTok {txt_i:>02d} ImgTok '
                       f'{int(img_i):>02d} {100 * s:.2f}%')
             avg_similarity = mapped_tokens[:, 1].mean()
-            max_guidance = 1.0 - avg_similarity
-            image_guidance = max_guidance
-            text_guidance = 1.0 - image_guidance
-            print(f'Guidance Max: {max_guidance:.2%}, '
-                  f'Image: {image_guidance:.2%}, Text: {text_guidance:.2%}, '
+            print(f'Avg Similarity: {avg_similarity:.2%}, '
+                  f'Threshold: {guide_image_threshold:.2%}, '
                   f'Clustered: {guide_image_clustered:.2%}, '
-                  f'Linear: {guide_image_linear:.2%}')
+                  f'Linear: {guide_image_linear:.2%}, '
+                  f'Guidance Max: {guide_image_max_guidance:.2%}')
             # TODO: Guidance slope param to make either linear or grouped
             #   slopes quadratic .. AKA nice an smooth instead of sharp
             # Init img weights from linear slope, front to back, to amplify
@@ -276,15 +275,21 @@ class Guide():
 
             print('Image Weights:', img_weights)
             # tween text and image embeddings
-            # TODO-OPT: Vectorize:
+            # TODO-OPT: Vectorize, probably don't need if conditions
             clip_embeddings = torch.zeros_like(txt_emb)
             for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                ig = image_guidance * img_weights[txt_i]
-                tg = 1.0 - abs(ig)
-                clip_embeddings[0, txt_i] = ((txt_emb[0, txt_i] * tg) +
-                                             (img_emb[0, int(img_i)] * ig))
-            # clip_embeddings = txt_emb.roll(1, 1)
-            # clip_embeddings[0, 0] = img_emb[0]
+                sd = 1.0 - s
+                iw = min(img_weights[txt_i].item(), guide_image_max_guidance)
+                if iw == 0:
+                    # Leave as is
+                    clip_embeddings[0, txt_i] = txt_emb[0, txt_i]
+                elif abs(iw) >= sd:
+                    # We cap at taking all the image
+                    clip_embeddings[0, txt_i] = img_emb[0, int(img_i)]
+                else:
+                    # Text towards image
+                    d_emb = img_emb[0, int(img_i)] - txt_emb[0, txt_i]
+                    clip_embeddings[0, txt_i] = txt_emb[0, txt_i] + (d_emb * iw)
             print('Tweened text and image embeddings:', img_emb.shape,
                   ' text shape:', txt_emb.shape, ' embed shape:',
                   clip_embeddings.shape)

@@ -74,6 +74,7 @@ class Runner():
             guide_image_threshold: float = 0.5,
             guide_image_clustered: float = 0.5,
             guide_image_linear: float = 0.5,
+            guide_image_max_guidance: float = 0.5,
             guide_image_mode: int = 0,
             guide_image_reuse: bool = True,
             strength: float = 0.6,
@@ -104,6 +105,7 @@ class Runner():
             guide_image_threshold=guide_image_threshold,
             guide_image_clustered=guide_image_clustered,
             guide_image_linear=guide_image_linear,
+            guide_image_max_guidance=guide_image_max_guidance,
             guide_image_mode=guide_image_mode,
             guide_image_reuse=guide_image_reuse)
 

@@ -5,18 +5,22 @@ import gradio as gr
 
 import utils
 
-runner = utils.Runner(
-    not [s for s in sys.argv[1:] if 'dl' in s or 'download' in s])
+runner = None
 
 
 def run(prompt, init_image, guide_image, height, width, guide_image_threshold,
-        guide_image_clustered, guide_image_linear, guide_image_mode,
-        guide_image_reuse, strength, steps, guidance_scale, samples, seed):
+        guide_image_clustered, guide_image_linear, guide_image_max_guidance,
+        guide_image_mode, guide_image_reuse, strength, steps, guidance_scale,
+        samples, seed):
+    global runner
+    if runner is None:
+        runner = utils.Runner(
+            not [s for s in sys.argv[1:] if 'dl' in s or 'download' in s])
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
                             guide_image_threshold, guide_image_clustered,
-                            guide_image_linear, guide_image_mode,
-                            guide_image_reuse, strength, steps, guidance_scale,
-                            samples, seed)
+                            guide_image_linear, guide_image_max_guidance,
+                            guide_image_mode, guide_image_reuse, strength,
+                            steps, guidance_scale, samples, seed)
     return imgs
 
 
@@ -29,6 +33,13 @@ css = '''
     }
     #gallery>div>.h-full {
         min-height: 20rem;
+    }
+    #seed_row, #seed_row>div.col {
+        gap: 0;
+        padding: 0;
+    }
+    #seed_row>div.col>div, #seed_row>div.col>div>div, #seed_row>div.col fieldset {
+        min-height: 100%;
     }
 '''
 block = gr.Blocks(css=css)
@@ -69,24 +80,24 @@ with block:
                                  value=0.6,
                                  step=0.01)
             guide_image_threshold = gr.Slider(
-                label='Threshold "Match" Guidance ( -1.0 : 1.0 )',
-                minimum=-2,
-                maximum=2,
-                value=0.5,
-                step=0.1)
+                label='Threshold "Match" Guidance ( Image )',
+                minimum=-1,
+                maximum=1,
+                value=0.25,
+                step=0.05)
 
         with gr.Row():
             steps = gr.Slider(label='Steps',
                               minimum=8,
-                              maximum=50,
+                              maximum=100,
                               value=30,
                               step=2)
             guide_image_clustered = gr.Slider(
-                label='Clustered "Match" Guidance ( -1.0 : 1.0 )',
-                minimum=-2,
-                maximum=2,
-                value=0.5,
-                step=0.1)
+                label='Clustered "Match" Guidance ( Image )',
+                minimum=-1,
+                maximum=1,
+                value=0.25,
+                step=0.05)
 
         with gr.Row():
             samples = gr.Slider(label='Batches ( Images )',
@@ -95,11 +106,11 @@ with block:
                                 value=4,
                                 step=1)
             guide_image_linear = gr.Slider(
-                label='Linear "Style" Guidance ( -1.0 : 1.0 )',
-                minimum=-2,
-                maximum=2,
+                label='Linear "Style" Guidance ( Image )',
+                minimum=-1,
+                maximum=1,
                 value=0.5,
-                step=0.1)
+                step=0.05)
 
         with gr.Row():
             guidance_scale = gr.Slider(label='Guidance Scale ( Overall )',
@@ -107,17 +118,28 @@ with block:
                                        maximum=20,
                                        value=8,
                                        step=0.5)
-            guide_image_mode = gr.Radio(label='Mapping Priority',
-                                        choices=['Text Order', 'Optimal Fit'],
-                                        value='Optimal Fit',
-                                        type='index')
+            guide_image_max = gr.Slider(label='Max Image Guidance',
+                                        minimum=0,
+                                        maximum=1,
+                                        value=0.35,
+                                        step=0.05,
+                                        interactive=True)
 
-        with gr.Row():
-            seed = gr.Number(label='Seed',
-                             precision=0,
-                             value=0,
-                             interactive=True)
-            guide_image_reuse = gr.Checkbox(label='Reuse Latents', value=True)
+        with gr.Row(elem_id='seed_row').style(equal_height=True):
+            with gr.Column(scale=2, variant='panel'):
+                seed = gr.Number(label='Seed',
+                                 precision=0,
+                                 value=0,
+                                 interactive=True)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_mode = gr.Radio(
+                    label='Mapping Priority',
+                    choices=['Text Order', 'Optimal Fit'],
+                    value='Optimal Fit',
+                    type='index')
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_reuse = gr.Checkbox(label='Reuse Latents',
+                                                value=True)
 
         with gr.Row():
             height = gr.Slider(minimum=64,
@@ -139,7 +161,7 @@ with block:
                       inputs=[
                           prompt, init_image, guide_image, height, width,
                           guide_image_threshold, guide_image_clustered,
-                          guide_image_linear, guide_image_mode,
+                          guide_image_linear, guide_image_max, guide_image_mode,
                           guide_image_reuse, strength, steps, guidance_scale,
                           samples, seed
                       ],
@@ -148,9 +170,9 @@ with block:
                        inputs=[
                            prompt, init_image, guide_image, height, width,
                            guide_image_threshold, guide_image_clustered,
-                           guide_image_linear, guide_image_mode,
-                           guide_image_reuse, strength, steps, guidance_scale,
-                           samples, seed
+                           guide_image_linear, guide_image_max,
+                           guide_image_mode, guide_image_reuse, strength, steps,
+                           guidance_scale, samples, seed
                        ],
                        outputs=[gallery])
 

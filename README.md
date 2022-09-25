@@ -291,6 +291,42 @@ All that spookyness went away, and we only see a slight variation from the
 base img2img generation, showing how little the trailing latents have an effect
 on the guidance of theses images, which is not always the case.
 
+### Img2Img Zeus portrait to Anime?
+
+Initial Image:
+https://lexica.art/prompt/6aed4d25-a58e-4461-bc7e-883f90acb6ed
+
+![Zeus](experiments/zeus.webp)
+
+#### Img2Img: "anime portrait of a strong, masculine old man with a curly white beard and blue eyes, anime drawing"
+
+Cranking *Diffusion Strength up to 0.7* here to get more of a transformation
+and *Steps to 40*
+
+![Anime Zeus](experiments/zeus_anime.png)
+
+#### Now lets try and get a little more style guidance from an image
+
+https://lexica.art/prompt/82bfb12d-86c7-412f-ab27-d3a08d9017af
+
+![Mod Image for Zeus](experiments/zeus_mod.webp)
+
+#### Zeus with default Image Guidance
+
+![Zeus modded with defaults from above](experiments/zeus_modded_defaults.png)
+
+#### Tuned Settings
+
+- Threshold = 1.0
+- Clustered = -0.5
+- Linear = 1.0
+- Max Image Guidance = 1.0
+
+![Zeus modded and tuned](experiments/zeus_tuned.png)
+
+Here we're able to take some of the finer aesthetics and amplify some matching
+features.
+
 ## Future Work
 
 - Threshold adjustment slider vs using the avg

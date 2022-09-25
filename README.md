@@ -10,15 +10,15 @@ you'd like, I plan to make some additional improvements.
 
 ### What this is
 
-Methods to map styles of an image using CLIP image embeddings to the CLIP text
+- Methods to map styles of an image using CLIP image embeddings to the CLIP text
 embeddings after encoding the prompt.
+- A hopefully easy to use webui for generating images
 
 ### What this isn't
 
-**Img2Img**: The methods shown in this repo apply to image guidance, not the
+- **Img2Img**: The methods shown in this repo apply to image guidance, not the
 orgin, and in this demo I show how Img2Img can be used in combination.
-
-**Textual Inversion**: Requires training / tuning a model, this just modifies
+- **Textual Inversion**: Requires training / tuning a model, this just modifies
 embeddings, and is only good at some style transfer not reconstructing subjects,
 as Textual Inversion has been demonstrated to do. I would like to integrate
 Textual Inversion into this demo at somepoint.
@@ -45,6 +45,21 @@ Textual Inversion into this demo at somepoint.
 - **Threshold** - This increases or decreases the similarity
     of associated features above or below a relative threshold defined by
     similarity.. average similarity ( across all features ) by default.
+
+### "Help, my image looks like garbage"
+
+Could be that CLIP doesn't have a good interpretation of it or that it doesn't
+align well with the prompt at all.
+You can set **Threshold** and **Clustered** guidance to 0.0-0.1 and try to
+increment from there, but if there's no alignment then it's probably not a
+good fit at all.. **Linear** Style guidance should be fine to use though in these
+cases, though you may still get mixed results, they wont be as bad as with the
+other options.
+
+In general I've found these methods work well to transfer styles from portraits
+( photos, or artificial ) and more abstract / background scenes.
+CLIP alone does not have a great understanding of the physical world, so you
+wont be able to transfer actions or scene composition.
 
 ## Abstract
 
@@ -83,7 +98,7 @@ and have a lot to learn, though I do have a lot of translateable skills.
 I may make assumptions in this work that are incorrect, and I'm always looking
 to improve my knowledge if you'll humor me.
 
-## Intro
+## Process
 
 ### The Problem
 
@@ -168,25 +183,69 @@ the clustered integration works, but not quite; this would be a little more
 direct and I think would give really good results, especially in a multi-image
 guided case.
 
-
 ## Experiments
 
-### Mushroom Guy
+Everything here I've sourced from myself or https://lexica.art/ so there
+shouldn't be any copyright issues...
 
-TODO: Figure out how to reference photos from repo
+All experiments were run with default settings and **seed** 1337 unless
+otherwise mentioned:
+- Diffusion Stength = 0.6
+- Steps = 30
+- Batches = 4
+- Guidance Scale = 8
+- Init Height & Width = 512
+- Threshold Match Guidance = 0.25
+- Clustered Match Guidance = 0.25
+- Linear Style Guidance = 0.5
+- Max Image Guidance = 0.35
+- Optimal Fit Mapping with reused Latents
 
-### Self Portrait
+![Default Settings](experiments/settings.png)
 
-TODO: Figure out how to reference photos from repo
+### "a photo of a turtle, hd 8k, dlsr photo"
+
+#### Base Images
+
+![Generated Base Images](experiments/turtle_base.png)
+
+#### Modifier
+
+https://lexica.art/?q=ocean+painting&prompt=e1fdbf56-a71c-43eb-ac4b-347bacf7c496
+![Guidance Image to apply to Prompt](experiments/turtle_mod.webp)
+
+#### Applied with Defaults
+
+![Generated with image defaults](experiments/turtle_modded_defaults.png)
+
+### Tuned Settings
+
+- Threshold = -0.25
+- Clustered = 0.0
+- Linear = 1.0
+- Max Image Guidance = 1.0
+
+![Generated with tuned settings](experiments/turtle_tuned.png)
+
+You can see we've guided the generation from this seed in a new direction while
+keeping true to the prompt.
+
+Explanation ( Guess ):
+- Negative Threshold setting moves us away from matched concepts between prompt
+    and image in linear space.
+- High Linear setting moves us towards minor stylistic details, fidelity,
+    texture, color...
 
 ## Future Work
 
 - Threshold adjustment slider vs using the avg
 - Support for negative prompts
 - Intersecting features of multiple images on prompt embeddings.
+- Integrate Textual Inversion in an easy to use way
 - Dissect BLIP and StableDiffusion training, and build an algorithm or model
     that can order CLIP image embeddings to be usable by Stable Diffusion.
-- Someway to find or best fit a seed... ( model or algorithm )
+- Someway to find or best fit a seed to an image... ( model or algorithm ) as 
+    seeds seem to have a huge impact on image generation.
 
 
 ## Hopes, Dreams and Rambling...
@@ -217,5 +276,5 @@ TODO: Figure out how to reference photos from repo
 
 Everyone behind Stable Diffusion, CLIP and DALL-E for inspiring me creating the
 foundation for this work ( Stability AI, and OpenAI ). Huggingface for code
-and infrastructure; GitHub, Python, Gradio, Numpy and all other libraries
-and code indirectly used.
+and infrastructure; GitHub, Python, Gradio, Numpy, Pillow and all other
+libraries and code indirectly used.

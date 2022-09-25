@@ -1,6 +1,51 @@
 # "FlexDiffuse"
 ## *An adaptation of Stable Diffusion with Image Guidance.*
 
+## TLDR
+
+You can find the code for all of this in `guidance.py` feel free to copy and
+reference as you desire, I provide no license or warranty. You can probably
+`pip install` this repo as a module and reference the file that way too if
+you'd like, I plan to make some additional improvements.
+
+### What this is
+
+Methods to map styles of an image using CLIP image embeddings to the CLIP text
+embeddings after encoding the prompt.
+
+### What this isn't
+
+**Img2Img**: The methods shown in this repo apply to image guidance, not the
+orgin, and in this demo I show how Img2Img can be used in combination.
+
+**Textual Inversion**: Requires training / tuning a model, this just modifies
+embeddings, and is only good at some style transfer not reconstructing subjects,
+as Textual Inversion has been demonstrated to do. I would like to integrate
+Textual Inversion into this demo at somepoint.
+
+### To Run the demo
+
+0. Ensure you have at least **python 3.10** installed and activated in your env.
+1. `pip install -r requirements.txt`
+2. `python ui.py --dl`
+3. The --dl param can be omitted after first run, it's used to connect to
+    huggingface to download the models, you'll need to setup your account and
+    all that, see https://huggingface.co and Stable Diffusion there for more
+    details on how to get access.
+
+### Image guidance method parameters
+
+- **Clustered** - This increases or decreases the association of the
+    CLIP embeddings with their strongest related features and the features
+    around them with a linear reduction in weight.
+- **Linear** - This increases or decreases the association of the trailing
+    embedding features. In StableDiffusion this means more stylistic features,
+    where as the front-most features tend to represent the more major concepts
+    of the image.
+- **Threshold** - This increases or decreases the similarity
+    of associated features above or below a relative threshold defined by
+    similarity.. average similarity ( across all features ) by default.
+
 ## Abstract
 
 Stable Diffusion is great, text prompts are alright... While powerful, they
@@ -37,36 +82,6 @@ I am by no means an expert on this, I've only been doing ML for a couple years
 and have a lot to learn, though I do have a lot of translateable skills.
 I may make assumptions in this work that are incorrect, and I'm always looking
 to improve my knowledge if you'll humor me.
-
-## TLDR
-
-You can find the code for all of this in `guidance.py` feel free to copy and
-reference as you desire, I provide no license or warranty. You can probably
-`pip install` this repo as a module and reference the file that way too if
-you'd like, I plan to make some additional improvements.
-
-### To Run the demo
-
-0. Ensure you have at least **python 3.10** installed and activated in your env.
-1. `pip install -r requirements.txt`
-2. `python ui.py --dl`
-3. The --dl param can be omitted after first run, it's used to connect to
-    huggingface to download the models, you'll need to setup your account and
-    all that, see https://huggingface.co and Stable Diffusion there for more
-    details on how to get access.
-
-### Image guidance method parameters
-
-- **Clustered** - This increases or decreases the association of the
-    CLIP embeddings with their strongest related features and the features
-    around them with a linear reduction in weight.
-- **Linear** - This increases or decreases the association of the trailing
-    embedding features. In StableDiffusion this means more stylistic features,
-    where as the front-most features tend to represent the more major concepts
-    of the image.
-- **Threshold** - *Proposed* - This would increase or decrease the similarity
-    of associated features above or below a relative threshold defined by
-    similarity.. average similarity ( across all features ) by default.
 
 ## Intro
 
@@ -166,7 +181,7 @@ TODO: Figure out how to reference photos from repo
 
 ## Future Work
 
-- Build that Threshold method and see if it's cool
+- Threshold adjustment slider vs using the avg
 - Support for negative prompts
 - Intersecting features of multiple images on prompt embeddings.
 - Dissect BLIP and StableDiffusion training, and build an algorithm or model

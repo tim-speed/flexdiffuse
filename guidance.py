@@ -98,7 +98,8 @@ class Guide():
                prompt_text_vs_image: float = 0.5,
                guide_image_clustered: float = 0.5,
                guide_image_linear: float = 0.5,
-               guide_image_mode: int = GUIDE_ORDER_TEXT) -> torch.Tensor:
+               guide_image_mode: int = GUIDE_ORDER_TEXT,
+               guide_image_reuse: bool = True) -> torch.Tensor:
 
         if isinstance(prompt, str):
             prompt = prompt.strip()
@@ -197,7 +198,8 @@ class Guide():
                 if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
                     continue
                 mapped_tokens[txt_i] = (img_i, s)
-                img_toks_used.add(img_i)
+                if not guide_image_reuse:
+                    img_toks_used.add(img_i)
             # Print the result
             print(f'Image Feature and Token alignment:')
             for txt_i, (img_i, s) in enumerate(mapped_tokens):

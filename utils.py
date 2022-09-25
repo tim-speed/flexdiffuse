@@ -75,6 +75,7 @@ class Runner():
             guide_image_clustered: float = 0.5,
             guide_image_linear: float = 0.5,
             guide_image_mode: int = 0,
+            guide_image_reuse: bool = True,
             strength: float = 0.6,
             steps: int = 10,
             guidance_scale: float = 8,
@@ -103,7 +104,8 @@ class Runner():
             prompt_text_vs_image=prompt_text_vs_image,
             guide_image_clustered=guide_image_clustered,
             guide_image_linear=guide_image_linear,
-            guide_image_mode=guide_image_mode)
+            guide_image_mode=guide_image_mode,
+            guide_image_reuse=guide_image_reuse)
 
         all_images = []
         for _ in range(samples):

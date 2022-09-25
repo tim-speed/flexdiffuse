@@ -10,12 +10,13 @@ runner = utils.Runner(
 
 
 def run(prompt, init_image, guide_image, height, width, prompt_text_vs_image,
-        guide_image_clustered, guide_image_linear, guide_image_mode, strength,
-        steps, guidance_scale, samples, seed):
+        guide_image_clustered, guide_image_linear, guide_image_mode,
+        guide_image_reuse, strength, steps, guidance_scale, samples, seed):
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
                             prompt_text_vs_image, guide_image_clustered,
-                            guide_image_linear, guide_image_mode, strength,
-                            steps, guidance_scale, samples, seed)
+                            guide_image_linear, guide_image_mode,
+                            guide_image_reuse, strength, steps, guidance_scale,
+                            samples, seed)
     return imgs
 
 
@@ -106,10 +107,14 @@ with block:
                                        maximum=20,
                                        value=8,
                                        step=0.5)
-            guide_image_mode = gr.Radio(label='Mapping Priority',
-                                        choices=['Text Order', 'Optimal Fit'],
-                                        value='Optimal Fit',
-                                        type='index')
+            with gr.Group():
+                guide_image_mode = gr.Radio(
+                    label='Mapping Priority',
+                    choices=['Text Order', 'Optimal Fit'],
+                    value='Optimal Fit',
+                    type='index')
+                guide_image_reuse = gr.Checkbox(label='Reuse Latents',
+                                                value=True)
 
         with gr.Row():
             seed = gr.Number(label='Seed',
@@ -135,16 +140,18 @@ with block:
                       inputs=[
                           prompt, init_image, guide_image, height, width,
                           prompt_text_vs_image, guide_image_clustered,
-                          guide_image_linear, guide_image_mode, strength, steps,
-                          guidance_scale, samples, seed
+                          guide_image_linear, guide_image_mode,
+                          guide_image_reuse, strength, steps, guidance_scale,
+                          samples, seed
                       ],
                       outputs=[gallery])
         generate.click(run,
                        inputs=[
                            prompt, init_image, guide_image, height, width,
                            prompt_text_vs_image, guide_image_clustered,
-                           guide_image_linear, guide_image_mode, strength,
-                           steps, guidance_scale, samples, seed
+                           guide_image_linear, guide_image_mode,
+                           guide_image_reuse, strength, steps, guidance_scale,
+                           samples, seed
                        ],
                        outputs=[gallery])
 

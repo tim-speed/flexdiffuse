@@ -205,20 +205,20 @@ otherwise mentioned:
 
 ### "a photo of a turtle, hd 8k, dlsr photo"
 
-#### Base Images
+#### Base Generation
 
 ![Generated Base Images](experiments/turtle_base.png)
 
 #### Modifier
 
-https://lexica.art/?q=ocean+painting&prompt=e1fdbf56-a71c-43eb-ac4b-347bacf7c496
+https://lexica.art/prompt/e1fdbf56-a71c-43eb-ac4b-347bacf7c496
 ![Guidance Image to apply to Prompt](experiments/turtle_mod.webp)
 
 #### Applied with Defaults
 
 ![Generated with image defaults](experiments/turtle_modded_defaults.png)
 
-### Tuned Settings
+#### Tuned Settings
 
 - Threshold = -0.25
 - Clustered = 0.0
@@ -235,6 +235,61 @@ Explanation ( Guess ):
     and image in linear space.
 - High Linear setting moves us towards minor stylistic details, fidelity,
     texture, color...
+
+### "Deer colorful, fantasy, intricate, highly detailed, digital painting, hq, trending on artstation, illustration, lovecraftian dark ominous eldritch"
+
+Inspired by: https://lexica.art/?prompt=bf174f36-2be8-475b-8719-76fbf08f6149
+
+#### Base Generation
+
+![Generated Base Images](experiments/deer_base.png)
+
+#### Img2Img
+
+This time we'll modify a generated image using the same prompt
+
+![Selected Image for Img2Img](experiments/deer_img2img_base.png)
+
+After Img2Img ( Without Image Guidance )
+
+![Deer again after Img2Img](experiments/deer_img2img_defaults.png)
+
+#### Modifier
+
+https://lexica.art/prompt/225c52aa-fd4b-4d17-822e-3721b7eb9c05
+![Guidance Image to apply to Prompt](experiments/deer_mod.webp)
+
+#### Applied with Defaults
+
+![Generated with image defaults](experiments/deer_modded_defaults.png)
+
+The differences here are extremely subtle, see if you can spot them, this
+indicates high alignment with the prompt. Let's amp up the settings a bit.
+
+#### Tuned Settings
+
+- Threshold = 1.0
+- Clustered = 0.0 ( Turned off cause it gave the deer a warped tree neck )
+- Linear = 1.0
+- Max Image Guidance = 1.0
+
+![Generated with tuned settings](experiments/deer_tuned.png)
+
+Much spooky!
+
+Threshold generally works better than clustered, but only if there's good
+alignment between prompt and image... I need to add a setting to adjust the
+actual threshold and not just the intensity. Right now the threshold is
+computed as an average of mapped latent similarities, instead it should be
+a specific value between, probably around 0.5 ..
+
+Now watch what happens if we just use linear, setting `threshold = 0`
+
+![Generated with linear only](experiments/deer_tuned_linear_only.png)
+
+All that spookyness went away, and we only see a slight variation from the
+base img2img generation, showing how little the trailing latents have an effect
+on the guidance of theses images, which is not always the case.
 
 ## Future Work
 

@@ -71,7 +71,8 @@ class Runner():
             init_image: Optional[Image.Image] = None,
             guide_image: Optional[Image.Image] = None,
             init_size: Tuple[int, int] = (512, 512),
-            guide_image_threshold: float = 0.5,
+            guide_image_threshold_mult: float = 0.5,
+            guide_image_threshold_floor: float = 0.5,
             guide_image_clustered: float = 0.5,
             guide_image_linear: float = 0.5,
             guide_image_max_guidance: float = 0.5,
@@ -85,7 +86,8 @@ class Runner():
 
         fp = f'i2i_ds{int(strength * 100)}' if init_image else 't2i'
         if guide_image:
-            fp += (f'_it{int(guide_image_threshold * 100)}'
+            fp += (f'_itm{int(guide_image_threshold_mult * 100)}'
+                   f'_itf{int(guide_image_threshold_floor * 100)}'
                    f'_ic{int(guide_image_clustered * 100)}'
                    f'_il{int(guide_image_linear * 100)}'
                    f'_im{guide_image_mode:d}')
@@ -102,7 +104,8 @@ class Runner():
         guide_embeds = self.guide.embeds(
             prompt=prompt,
             guide_image=guide_image,
-            guide_image_threshold=guide_image_threshold,
+            guide_image_threshold_mult=guide_image_threshold_mult,
+            guide_image_threshold_floor=guide_image_threshold_floor,
             guide_image_clustered=guide_image_clustered,
             guide_image_linear=guide_image_linear,
             guide_image_max_guidance=guide_image_max_guidance,

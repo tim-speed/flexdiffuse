@@ -8,7 +8,8 @@ import utils
 runner = None
 
 
-def run(prompt, init_image, guide_image, height, width, guide_image_threshold,
+def run(prompt, init_image, guide_image, height, width,
+        guide_image_threshold_mult, guide_image_threshold_floor,
         guide_image_clustered, guide_image_linear, guide_image_max_guidance,
         guide_image_mode, guide_image_reuse, strength, steps, guidance_scale,
         samples, seed):
@@ -17,7 +18,8 @@ def run(prompt, init_image, guide_image, height, width, guide_image_threshold,
         runner = utils.Runner(
             not [s for s in sys.argv[1:] if 'dl' in s or 'download' in s])
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
-                            guide_image_threshold, guide_image_clustered,
+                            guide_image_threshold_mult,
+                            guide_image_threshold_floor, guide_image_clustered,
                             guide_image_linear, guide_image_max_guidance,
                             guide_image_mode, guide_image_reuse, strength,
                             steps, guidance_scale, samples, seed)
@@ -34,11 +36,11 @@ css = '''
     #gallery>div>.h-full {
         min-height: 20rem;
     }
-    #seed_row, #seed_row>div.col {
+    div.row, div.row>div.col {
         gap: 0;
         padding: 0;
     }
-    #seed_row>div.col>div, #seed_row>div.col>div>div, #seed_row>div.col fieldset {
+    div.row>div.col>div, div.row>div.col>div>div, div.row>div.col fieldset {
         min-height: 100%;
     }
 '''
@@ -47,7 +49,7 @@ block = gr.Blocks(css=css)
 with block:
     with gr.Group():
         with gr.Box():
-            with gr.Row().style(mobile_collapse=False, equal_height=True):
+            with gr.Row().style(equal_height=True):
                 prompt = gr.TextArea(
                     label='Enter your prompt',
                     show_label=False,
@@ -63,7 +65,7 @@ with block:
                                                     rounded=(False, True, True,
                                                              False),
                                                 ) # type: ignore
-            with gr.Row().style(mobile_collapse=False, equal_height=True):
+            with gr.Row().style(equal_height=True):
                 init_image = gr.Image(label='Initial image',
                                       source='upload',
                                       interactive=True,
@@ -73,20 +75,29 @@ with block:
                                        interactive=True,
                                        type='pil')
 
-        with gr.Row(mobile_collapse=False, equal_height=True):
-            strength = gr.Slider(label='Diffusion Strength ( For Img2Img )',
-                                 minimum=0,
-                                 maximum=1,
-                                 value=0.6,
-                                 step=0.01)
-            guide_image_threshold = gr.Slider(
-                label='Threshold "Match" Guidance ( Image )',
-                minimum=-1,
-                maximum=1,
-                value=0.25,
-                step=0.05)
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=2, variant='panel'):
+                strength = gr.Slider(label='Diffusion Strength ( For Img2Img )',
+                                     minimum=0,
+                                     maximum=1,
+                                     value=0.6,
+                                     step=0.01)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_threshold_mult = gr.Slider(
+                    label='Threshold "Match" Guidance Multiplier ( Image )',
+                    minimum=-1,
+                    maximum=1,
+                    value=0.25,
+                    step=0.05)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_threshold_floor = gr.Slider(
+                    label='Threshold "Match" Guidance Floor ( Image )',
+                    minimum=0,
+                    maximum=1,
+                    value=0.75,
+                    step=0.05)
 
-        with gr.Row():
+        with gr.Row(equal_height=True):
             steps = gr.Slider(label='Steps',
                               minimum=8,
                               maximum=100,
@@ -94,12 +105,12 @@ with block:
                               step=2)
             guide_image_clustered = gr.Slider(
                 label='Clustered "Match" Guidance ( Image )',
-                minimum=-1,
-                maximum=1,
-                value=0.25,
+                minimum=-0.5,
+                maximum=0.5,
+                value=0.15,
                 step=0.05)
 
-        with gr.Row():
+        with gr.Row(equal_height=True):
             samples = gr.Slider(label='Batches ( Images )',
                                 minimum=1,
                                 maximum=16,
@@ -112,7 +123,7 @@ with block:
                 value=0.5,
                 step=0.05)
 
-        with gr.Row():
+        with gr.Row(equal_height=True):
             guidance_scale = gr.Slider(label='Guidance Scale ( Overall )',
                                        minimum=0,
                                        maximum=20,
@@ -125,7 +136,7 @@ with block:
                                         step=0.05,
                                         interactive=True)
 
-        with gr.Row(elem_id='seed_row').style(equal_height=True):
+        with gr.Row(equal_height=True):
             with gr.Column(scale=2, variant='panel'):
                 seed = gr.Number(label='Seed',
                                  precision=0,
@@ -160,7 +171,8 @@ with block:
         prompt.submit(run,
                       inputs=[
                           prompt, init_image, guide_image, height, width,
-                          guide_image_threshold, guide_image_clustered,
+                          guide_image_threshold_mult,
+                          guide_image_threshold_floor, guide_image_clustered,
                           guide_image_linear, guide_image_max, guide_image_mode,
                           guide_image_reuse, strength, steps, guidance_scale,
                           samples, seed
@@ -169,7 +181,8 @@ with block:
         generate.click(run,
                        inputs=[
                            prompt, init_image, guide_image, height, width,
-                           guide_image_threshold, guide_image_clustered,
+                           guide_image_threshold_mult,
+                           guide_image_threshold_floor, guide_image_clustered,
                            guide_image_linear, guide_image_max,
                            guide_image_mode, guide_image_reuse, strength, steps,
                            guidance_scale, samples, seed

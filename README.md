@@ -293,6 +293,31 @@ All that spookyness went away, and we only see a slight variation from the
 base img2img generation, showing how little the trailing latents have an effect
 on the guidance of theses images, which is not always the case.
 
+#### Rock Monkey ??? Custom threshold experiment
+
+Using a newly added slider to adjust the threshold, and the modifier image from
+this deer experiment and applying it to the turtle prompt and adjusting settings
+to:
+- Threshold Mult = 1.0
+- Threshold Floor = 0.1
+- Clustered = 0.0
+- Linear = 1.0
+- Max Image Guidance = 1.0
+
+![Rock Monkey?](experiments/turtle_to_rock_monkey.png)
+
+We get whatever this is... showing that sometimes embeddings with a low
+similarity of 0.1 - 0.2 ( it was still a turtle at 0.2 ) can still map in and 
+generate something.. this isn't always the case. As with the original turtle
+modifier image, the wavy noise pattern maps in below a 0.75 threshold and takes
+us far away from anything resembling an animal.
+
+To me this points towards a potential mapping of core types of images to
+different settings. I could probably judge overall prompt similarity with the
+modifier image, as well as test different core classes of images "portrait",
+"photo", "painting", "group" .. and with that infer ideal defaults.
+
+
 ### Img2Img Zeus portrait to Anime?
 
 Initial Image:
@@ -331,9 +356,11 @@ features.
 
 ## Future Work
 
-- Threshold adjustment slider vs using the avg
-- Support for negative prompts
+- Make mapping and parameter decisions by identifying major image classes.
+    Investigating potential for a more automated solution where the user can
+    just set a single guidance multiplier.
 - Intersecting features of multiple images on prompt embeddings.
+- Support for negative prompts
 - Integrate Textual Inversion in an easy to use way
 - Dissect BLIP and StableDiffusion training, and build an algorithm or model
     that can order CLIP image embeddings to be usable by Stable Diffusion.

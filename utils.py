@@ -62,7 +62,7 @@ class Runner():
         self.pipe = FlexPipeline(sd.vae, clip, sd.tokenizer, sd.unet,
                                  sd.scheduler).to(device)
         self.eta = 0
-        self.guide = Guide(clip, self.pipe.tokenizer, device)
+        self.guide = Guide(clip, self.pipe.tokenizer, device=device)
         self.device = device
         self.generator = torch.Generator(device=device)
 
@@ -71,6 +71,7 @@ class Runner():
             init_image: Optional[Image.Image] = None,
             guide_image: Optional[Image.Image] = None,
             init_size: Tuple[int, int] = (512, 512),
+            mapping_concepts: str = '',
             guide_image_threshold_mult: float = 0.5,
             guide_image_threshold_floor: float = 0.5,
             guide_image_clustered: float = 0.5,
@@ -104,6 +105,7 @@ class Runner():
         guide_embeds = self.guide.embeds(
             prompt=prompt,
             guide_image=guide_image,
+            mapping_concepts=mapping_concepts,
             guide_image_threshold_mult=guide_image_threshold_mult,
             guide_image_threshold_floor=guide_image_threshold_floor,
             guide_image_clustered=guide_image_clustered,

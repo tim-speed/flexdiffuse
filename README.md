@@ -293,10 +293,10 @@ All that spookyness went away, and we only see a slight variation from the
 base img2img generation, showing how little the trailing latents have an effect
 on the guidance of theses images, which is not always the case.
 
-#### Rock Monkey ??? Custom threshold experiment
+### Rock Monkey ??? Custom threshold experiment
 
 Using a newly added slider to adjust the threshold, and the modifier image from
-this deer experiment and applying it to the turtle prompt and adjusting settings
+the deer experiment and applying it to the turtle prompt and adjusting settings
 to:
 - Threshold Mult = 1.0
 - Threshold Floor = 0.1
@@ -317,6 +317,31 @@ different settings. I could probably judge overall prompt similarity with the
 modifier image, as well as test different core classes of images "portrait",
 "photo", "painting", "group" .. and with that infer ideal defaults.
 
+
+### "a creepy tree creature, 8k dslr photo" - Concept Mapping
+
+I added a feature which allows direct mapping matched features through a second
+prompt. The prompt does its mapping on the image, which can then be mapped to
+the first prompt.
+
+![Creepy Tree](experiments/creepy_tree.png)
+
+![Creepy Tree Mapped](experiments/creepy_tree_mapped.png)
+
+By specifying "creepy tree" in the second prompt and using the modifier image
+from the deer experiment, I was able to specifically target and map features
+of the guidance image to the base prompt.
+
+For this experiment I used all default settings, but turned the default image
+guidance features all to 0:
+- Threshold Mult = 0
+- Clustered = 0
+- Linear = 0
+- Max Image Guidance = 0
+
+This concept mapping is currently implemented after all these others as a sort
+of override. You do not need to turn those features off, but I did it to
+demonstrate.
 
 ### Img2Img Zeus portrait to Anime?
 
@@ -359,6 +384,7 @@ features.
 - Make mapping and parameter decisions by identifying major image classes.
     Investigating potential for a more automated solution where the user can
     just set a single guidance multiplier.
+- Cleanup UI
 - Intersecting features of multiple images on prompt embeddings.
 - Support for negative prompts
 - Integrate Textual Inversion in an easy to use way

@@ -8,7 +8,7 @@ import utils
 runner = None
 
 
-def run(prompt, init_image, guide_image, height, width,
+def run(prompt, init_image, guide_image, height, width, mapping_concepts,
         guide_image_threshold_mult, guide_image_threshold_floor,
         guide_image_clustered, guide_image_linear, guide_image_max_guidance,
         guide_image_mode, guide_image_reuse, strength, steps, guidance_scale,
@@ -18,7 +18,7 @@ def run(prompt, init_image, guide_image, height, width,
         runner = utils.Runner(
             not [s for s in sys.argv[1:] if 'dl' in s or 'download' in s])
     imgs, grid = runner.gen(prompt, init_image, guide_image, (height, width),
-                            guide_image_threshold_mult,
+                            mapping_concepts, guide_image_threshold_mult,
                             guide_image_threshold_floor, guide_image_clustered,
                             guide_image_linear, guide_image_max_guidance,
                             guide_image_mode, guide_image_reuse, strength,
@@ -74,6 +74,13 @@ with block:
                                        source='upload',
                                        interactive=True,
                                        type='pil')
+        with gr.Row(equal_height=True):
+            mapping_concepts = gr.TextArea(
+                label='Image Guidance Mapping Concepts',
+                max_lines=1,
+                placeholder=
+                'Enter items in image you would like to map directly',
+            )
 
         with gr.Row(equal_height=True):
             with gr.Column(scale=2, variant='panel'):
@@ -171,7 +178,7 @@ with block:
         prompt.submit(run,
                       inputs=[
                           prompt, init_image, guide_image, height, width,
-                          guide_image_threshold_mult,
+                          mapping_concepts, guide_image_threshold_mult,
                           guide_image_threshold_floor, guide_image_clustered,
                           guide_image_linear, guide_image_max, guide_image_mode,
                           guide_image_reuse, strength, steps, guidance_scale,
@@ -181,7 +188,7 @@ with block:
         generate.click(run,
                        inputs=[
                            prompt, init_image, guide_image, height, width,
-                           guide_image_threshold_mult,
+                           mapping_concepts, guide_image_threshold_mult,
                            guide_image_threshold_floor, guide_image_clustered,
                            guide_image_linear, guide_image_max,
                            guide_image_mode, guide_image_reuse, strength, steps,

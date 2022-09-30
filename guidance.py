@@ -1,3 +1,5 @@
+'''Utilities for building prompt or image guided embeddings and tweening the
+space of their numbers.'''
 from itertools import pairwise
 import math
 from typing import Any, List, Set, Tuple
@@ -122,6 +124,68 @@ def _traverse_a_to_b(al: List[int], bl: List[int], weights: torch.Tensor,
     return weights
 
 
+def _clustered_guidance(mapped_tokens: np.ndarray, threshold: float,
+                        guidance: float) -> None | torch.Tensor:
+    '''Cluster by indentifying all peaks that are over avg_similarity and then\
+        and then traversing downward into the valleys as style.
+    Similarity Peaks == Subject, Valleys == Style
+    Slope will be calculated between peaks and valleys
+
+    Args:
+        mapped_tokens (np.ndarray): The mapped tokens to traverse
+        threshold (float): The mapping aligment threshold for potential peaks.
+        guidance (float): The amount of guidance to apply ( multiplier ).
+
+    Returns:
+        None | torch.Tensor: Clustered embedding weights
+    '''
+    EDITABLE_TOKENS = mapped_tokens.shape[0]
+    assert EDITABLE_TOKENS == 76, (f'EDITABLE_TOKENS expected to '
+                                   f'be 76 got {EDITABLE_TOKENS}')
+    clustered_weights = None
+    peaks: List[int] = []
+    for txt_i, (_, s) in enumerate(mapped_tokens[1:-1], 1):
+        if s < threshold:
+            continue
+        if (mapped_tokens[txt_i - 1, 1] <= s >= mapped_tokens[txt_i + 1, 1]):
+            peaks.append(txt_i)
+    if peaks:
+        valleys: List[int] = []
+        if peaks[0] != 0:
+            valleys.append(0)
+        for p1, p2 in pairwise(peaks):
+            d = p2 - p1
+            if d > 0:
+                valleys.append(p1 + math.ceil(d / 2))
+        if peaks[-1] != EDITABLE_TOKENS - 1:
+            valleys.append(EDITABLE_TOKENS - 1)
+        # Peaks to Valleys
+        clustered_weights = _traverse_a_to_b(
+            peaks, valleys, torch.ones((EDITABLE_TOKENS,)), 1.0) * guidance
+    return clustered_weights
+
+
+def _blend_weights(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    '''Blend the weights described in two tensors into one.
+
+    Args:
+        a (torch.Tensor): First tensor to blend
+        b (torch.Tensor): Second tensor to blend
+
+    Returns:
+        torch.Tensor: A tensor blended of the two weights
+    '''
+    assert a.shape == b.shape, f'Tensor shapes a={a.shape} != b={b.shape}'
+    if a.max() >= 0:
+        if b.max() >= 0:
+            return torch.maximum(a, b)
+        # Fighting eachother
+        # TODO: might be a better way?
+        return a + b
+    # Both negative or zero
+    return torch.minimum(a, b)
+
+
 def preprocess(image: Image | Any) -> torch.Tensor:
     w, h = image.size
     if h > w:
@@ -146,10 +210,21 @@ class Guide():
                  clip: CLIPModel,
                  tokenizer: CLIPTokenizer,
                  device: str = 'cuda') -> None:
+        '''Init context for generating prompt or image embeddings and tweening\
+            the space of their numbers.
+
+        Args:
+            clip (CLIPModel): The CLIP model to use
+            tokenizer (CLIPTokenizer): The tokenizer used by the CLIP model.
+            device (str, optional): Only tested with cuda. Defaults to 'cuda'.
+        '''
+        # TODO: Support regular CLIP not just huggingface
         self.clip = clip
         self.tokenizer = tokenizer
         self.device = device
-        self.placeholder_tokens = self.tokenizer(
+        # Placeholder embed is used for its header token in direct image
+        #   guidance
+        placeholder_tokens = self.tokenizer(
             '{}',
             padding='max_length',
             max_length=self.tokenizer.model_max_length,
@@ -157,7 +232,7 @@ class Guide():
             return_tensors='pt',
         )
         self.placeholder_embed = self.clip.text_model(
-            self.placeholder_tokens.input_ids.to(self.device))[0]
+            placeholder_tokens.input_ids.to(self.device))[0]
 
     def embeds(self,
                prompt: str | List[str] = '',
@@ -168,17 +243,54 @@ class Guide():
                guide_image_clustered: float = 0.5,
                guide_image_linear: float = 0.5,
                guide_image_max_guidance: float = 0.5,
-               guide_image_mode: int = GUIDE_ORDER_TEXT,
+               guide_image_mode: int = GUIDE_ORDER_ALIGN,
                guide_image_reuse: bool = True) -> torch.Tensor:
+        '''Generate embeddings from text or image or tween their space of\
+            numbers.
+
+        Args:
+            prompt (str | List[str], optional): The guidance prompt. Defaults\
+                to ''.
+            guide_image (Image | None, optional): The guidance image. Defaults\
+                to None.
+            mapping_concepts (str, optional): Concepts to fully map from image.\
+                Defaults to ''.
+            guide_image_threshold_mult (float, optional): Multiplier for\
+                alignment threshold tweening. Defaults to 0.5.
+            guide_image_threshold_floor (float, optional): Floor to accept\
+                embeddings for threshold tweening based on their alignment.\
+                Defaults to 0.5.
+            guide_image_clustered (float, optional): A clustered match guidance\
+                approach, not as good as threshold but can make some minor\
+                adjustments. Defaults to 0.5.
+            guide_image_linear (float, optional): Linear style blending from\
+                the end of the prompt, good for mapping subtle or background\
+                styles from image to text. Defaults to 0.5.
+            guide_image_max_guidance (float, optional): Cap on the overall\
+                tweening, regardless of multiplier, does not affect mapping\
+                concepts. Defaults to 0.5.
+            guide_image_mode (int, optional): Image guidance mode, to priorize\
+                based on aligment first or text embedding order, effects most\
+                noticiable when playing with the `reuse` parameter. Defaults\
+                to GUIDE_ORDER_ALIGN.
+            guide_image_reuse (bool, optional): Allow re-mapping already mapped\
+                image concepts, True will result in a best fit between image\
+                and text, but less "uniqueness". Defaults to True.
+
+        Raises:
+            ValueError: If you don't supply a proper prompt or guide image.
+
+        Returns:
+            torch.Tensor: CLIP embeddings for use in StableDiffusion.
+        '''
 
         if isinstance(prompt, str):
             prompt = prompt.strip()
         elif isinstance(prompt, list):
             prompt = [ss for ss in (s.strip() for s in prompt) if ss]
         else:
-            raise ValueError(
-                f'`prompt` has to be of type `str` or `list` but is {type(prompt)}'
-            )
+            raise ValueError(f'`prompt` has to be of type `str` '
+                             f'or `list` but is {type(prompt)}')
 
         if not prompt and guide_image is None:
             raise ValueError('No prompt, or guide image provided.')
@@ -211,16 +323,9 @@ class Guide():
                                   [CLIP_IMAGE_SIZE, CLIP_IMAGE_SIZE],
                                   interpolation=InterpolationMode.BICUBIC,
                                   antialias=True)
-            guide_tensor = normalize(guide_tensor,
-                                     [0.48145466, 0.4578275, 0.40821073],
-                                     [0.26862954, 0.26130258, 0.27577711])
-
-            # dbgim = (guide_tensor / 2 + 0.5).clamp(0, 1)
-            # dbgim = dbgim.cpu().permute(0, 2, 3, 1).numpy()
-            # dbgim = self.numpy_to_pil(dbgim)
-            # dbgim[0].save('./guide_tensor.png', format='png')
-
-            guide_tensor = guide_tensor.to(self.device)
+            guide_tensor = normalize(
+                guide_tensor, [0.48145466, 0.4578275, 0.40821073],
+                [0.26862954, 0.26130258, 0.27577711]).to(self.device)
 
             hidden_states = self.clip.vision_model.embeddings(guide_tensor)
             hidden_states = self.clip.vision_model.pre_layrnorm(hidden_states)
@@ -275,58 +380,19 @@ class Guide():
             img_weights = torch.linspace(
                 0.0, 1.0, steps=EDITABLE_TOKENS) * guide_image_linear
             if guide_image_clustered != 0:
-                # Cluster by indentifying all peaks that are over avg_similarity
-                #   and then traversing downward into the valleys as style
-                # Similarity Peaks == Subject, Valleys == Style
-                # Slope will be calculated between peaks and valleys
-                peaks: List[int] = []
-                for txt_i, (_, s) in enumerate(mapped_tokens[1:-1], 1):
-                    if s < avg_similarity:
-                        continue
-                    if (mapped_tokens[txt_i - 1, 1] <= s >=
-                            mapped_tokens[txt_i + 1, 1]):
-                        peaks.append(txt_i)
-                # TODO: Refactor this into function
-                if peaks:
-                    valleys: List[int] = []
-                    if peaks[0] != 0:
-                        valleys.append(0)
-                    for p1, p2 in pairwise(peaks):
-                        d = p2 - p1
-                        if d > 0:
-                            valleys.append(p1 + math.ceil(d / 2))
-                    if peaks[-1] != EDITABLE_TOKENS - 1:
-                        valleys.append(EDITABLE_TOKENS - 1)
-                    # Peaks to Valleys
-                    clustered_weights = _traverse_a_to_b(
-                        peaks, valleys, torch.ones(
-                            (EDITABLE_TOKENS,)), 1.0) * guide_image_clustered
-                    if guide_image_linear >= 0 and guide_image_clustered >= 0:
-                        img_weights = torch.maximum(img_weights,
-                                                    clustered_weights)
-                    elif guide_image_linear >= 0:
-                        # Fighting eachother
-                        # TODO: might be a better way?
-                        img_weights += clustered_weights
-                    else:
-                        img_weights = torch.minimum(img_weights,
-                                                    clustered_weights)
+                clustered_weights = _clustered_guidance(mapped_tokens,
+                                                        avg_similarity,
+                                                        guide_image_clustered)
+                if clustered_weights is not None:
+                    img_weights = _blend_weights(img_weights, clustered_weights)
+
             if guide_image_threshold_mult != 0:
                 th_weights = torch.ones(
                     (EDITABLE_TOKENS,)) * guide_image_threshold_mult
                 for txt_i, (_, s) in enumerate(mapped_tokens):
                     if s < guide_image_threshold_floor:
                         th_weights[txt_i] = 0
-                for i, (tw,
-                        iw) in enumerate(zip(th_weights, img_weights.clone())):
-                    if tw >= 0 and iw >= 0:
-                        img_weights[i] = torch.maximum(tw, iw)
-                    elif iw >= 0:
-                        # Fighting eachother
-                        # TODO: might be a better way?
-                        img_weights[i] += tw
-                    else:
-                        img_weights[i] = torch.minimum(tw, iw)
+                img_weights = _blend_weights(img_weights, th_weights)
 
             img_weights = torch.cat((torch.zeros((1,)), img_weights), dim=0)
             print('Image Weights:', img_weights.shape, ':', img_weights)

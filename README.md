@@ -11,7 +11,8 @@ you'd like, I plan to make some additional improvements.
 ### What this is
 
 - Methods to map styles of an image using CLIP image embeddings to the CLIP text
-embeddings after encoding the prompt.
+embeddings after encoding the prompt to allow reaching new spaces in prompt
+guidance.
 - A hopefully easy to use webui for generating images
 
 ### What this isn't
@@ -96,7 +97,8 @@ generation guidance, not just as source material.
 ### About Me
 
 I am by no means an expert on this, I've only been doing ML for a couple years
-and have a lot to learn, though I do have a lot of translateable skills.
+and have a lot to learn, though I do have a lot of translateable skills after
+15+ years of writing code and other things...
 I may make assumptions in this work that are incorrect, and I'm always looking
 to improve my knowledge if you'll humor me.
 
@@ -177,6 +179,9 @@ I found that mutating the valleys messed things up, as the features didn't have
 a strong connection, only subtle changes were acceptable, so I decided to remove
 the valley portion and just focused on maximizing the translation at the peaks.
 
+Continued experiments find that this method is not great, but it is kind of a
+neat way of doing some residual tweening between prompt and image like linear.
+
 ### Threshold integration
 
 The idea of this is that by setting a global threshold for mapped features you
@@ -184,6 +189,43 @@ could tune just the embeddings that passed the threshold, this is somewhat how
 the clustered integration works, but not quite; this would be a little more
 direct and I think would give really good results, especially in a multi-image
 guided case.
+
+### Prompt Mapping
+
+The idea here was to selectivly map image concept based on another prompt.
+This is done by relating a "Mapping Concepts" prompt to the image, and then
+relating that prompt to the base prompt with a high alignment threshold.
+This method can work quite well, and it gives much more control vs the direct
+threshold mapping method.
+
+### The header embedding and direct image guidance
+
+I've learned that some of my earlier experiments mapping to the front were most
+likely ruined by what I now refer to as the dreaded header embedding...
+This thing would ideally not exist, and should probably just be hardcoded as
+so far, it doesn't really seem to change...
+It is the first embedding, and it seems to be consistent among a few prompts I
+tested, altering it causes a lot of noise and really messes with guidance.
+My guess "not being well versed in transformers" is that it is used as an anchor
+for the attention mechanism allowing the guidance of the pattern or rythm in
+the space of numbers after it...
+If I am right about it.. it would be nice to have it removed from the model
+or hardcoded in forward functions.
+
+So anyway, by skipping this token, and not modifying it, modification of the
+earlier embeddings from index 1 onwards actually works well, and I have included
+a demonstration of pure image prompt guidance, and shifted all embedding
+modification to ignore index 0..
+
+Direct image guidance currently functions off the "pooling" embedding as the
+primary embedding, which is probably not ideal, the higher index "hidden"
+embeddings will probably lead to more image features when placed in series,
+as the pooling embedding might have too much compressed meaning, as it seems
+to generate very random things..
+
+This may also just be more of an issue with the pattern or rythm of the CLIP
+embeddings from image being nowhere near text.. and some kind of sequencer
+is needed, like maybe BLIP..
 
 ## Experiments
 
@@ -204,39 +246,6 @@ otherwise mentioned:
 - Optimal Fit Mapping with reused Latents
 
 ![Default Settings](experiments/settings.png)
-
-### "a photo of a turtle, hd 8k, dlsr photo"
-
-#### Base Generation
-
-![Generated Base Images](experiments/turtle_base.png)
-
-#### Modifier
-
-https://lexica.art/prompt/e1fdbf56-a71c-43eb-ac4b-347bacf7c496
-![Guidance Image to apply to Prompt](experiments/turtle_mod.webp)
-
-#### Applied with Defaults
-
-![Generated with image defaults](experiments/turtle_modded_defaults.png)
-
-#### Tuned Settings
-
-- Threshold = -0.25
-- Clustered = 0.0
-- Linear = 1.0
-- Max Image Guidance = 1.0
-
-![Generated with tuned settings](experiments/turtle_tuned.png)
-
-You can see we've guided the generation from this seed in a new direction while
-keeping true to the prompt.
-
-Explanation ( Guess ):
-- Negative Threshold setting moves us away from matched concepts between prompt
-    and image in linear space.
-- High Linear setting moves us towards minor stylistic details, fidelity,
-    texture, color...
 
 ### "Deer colorful, fantasy, intricate, highly detailed, digital painting, hq, trending on artstation, illustration, lovecraftian dark ominous eldritch"
 
@@ -263,6 +272,9 @@ https://lexica.art/prompt/225c52aa-fd4b-4d17-822e-3721b7eb9c05
 
 #### Applied with Defaults
 
+Except you actually need this due to it's introduction:
+- Threshold Floor = 0.2
+
 ![Generated with image defaults](experiments/deer_modded_defaults.png)
 
 The differences here are extremely subtle, see if you can spot them, this
@@ -270,7 +282,8 @@ indicates high alignment with the prompt. Let's amp up the settings a bit.
 
 #### Tuned Settings
 
-- Threshold = 1.0
+- Threshold Mult = 1.0
+- Threshold Floor = 0.2
 - Clustered = 0.0 ( Turned off cause it gave the deer a warped tree neck )
 - Linear = 1.0
 - Max Image Guidance = 1.0
@@ -343,7 +356,15 @@ This concept mapping is currently implemented after all these others as a sort
 of override. You do not need to turn those features off, but I did it to
 demonstrate.
 
+## Archived Experiments ( Need old version to replicate )
+They are broken by the introduction of threshold floor or removal of
+modification to the "header" embedding.
+
+
 ### Img2Img Zeus portrait to Anime?
+The introduction of threshold floor has broken the exact replication of this
+generation, as the auto calculated similarity or alignment used for this is
+not enabled as a setting, I believe it is 0.1663 ...
 
 Initial Image:
 https://lexica.art/prompt/6aed4d25-a58e-4461-bc7e-883f90acb6ed
@@ -379,19 +400,69 @@ https://lexica.art/prompt/82bfb12d-86c7-412f-ab27-d3a08d9017af
 Here we're able to take some of the finer aesthetics and amplify some matching
 features.
 
+### "a photo of a turtle, hd 8k, dlsr photo"
+The introduction of threshold floor has broken the exact replication of this
+generation, as the auto calculated similarity or alignment used for this is
+not enabled as a setting, I believe it is 11.37%
+
+#### Base Generation
+
+![Generated Base Images](experiments/turtle_base.png)
+
+#### Modifier
+
+https://lexica.art/prompt/e1fdbf56-a71c-43eb-ac4b-347bacf7c496
+![Guidance Image to apply to Prompt](experiments/turtle_mod.webp)
+
+#### Applied with Defaults
+
+![Generated with image defaults](experiments/turtle_modded_defaults.png)
+
+#### Tuned Settings
+
+- Threshold = -0.25
+- Clustered = 0.0
+- Linear = 1.0
+- Max Image Guidance = 1.0
+
+![Generated with tuned settings](experiments/turtle_tuned.png)
+
+You can see we've guided the generation from this seed in a new direction while
+keeping true to the prompt.
+
+Explanation ( Guess ):
+- Negative Threshold setting moves us away from matched concepts between prompt
+    and image in linear space.
+- High Linear setting moves us towards minor stylistic details, fidelity,
+    texture, color...
+
 ## Future Work
 
-- Make mapping and parameter decisions by identifying major image classes.
-    Investigating potential for a more automated solution where the user can
-    just set a single guidance multiplier.
 - Cleanup UI
 - Intersecting features of multiple images on prompt embeddings.
 - Support for negative prompts
+- Text based composition research... eventually implement something that can
+    replace the need for drawing tool integrations for those comfortable with
+    a language ( natural or otherwise ) guided approach.. the ideal end state
+    of this may be similar to a programming language:
+    - From my friend Dom:
+        - https://primer.ought.org/
+        - https://arxiv.org/abs/1909.05858
+        - "Transformer-XL and retreival augmented transformers have mechanisms
+            for packing more information into embeddings by retrieving context"
+        - "You can also take the pyramid approach that is popular in retreival
+            and summarization where you have multiple seperate embeddings and
+            have a “fusion” component that is trained to compose them"
 - Integrate Textual Inversion in an easy to use way
 - Dissect BLIP and StableDiffusion training, and build an algorithm or model
     that can order CLIP image embeddings to be usable by Stable Diffusion.
-- Someway to find or best fit a seed to an image... ( model or algorithm ) as 
-    seeds seem to have a huge impact on image generation.
+- Make mapping and parameter decisions by identifying major image classes.
+    Investigating potential for a more automated solution where the user can
+    just set a single guidance multiplier. This would be like applying BLIP or
+    similar to generate a mapping prompt.
+- Someway to find or best fit a noise pattern to an image generation goal... 
+    ( model or algorithm ) as seeds seem to have a huge impact on image
+    generation.
 
 
 ## Hopes, Dreams and Rambling...
@@ -422,5 +493,5 @@ features.
 
 Everyone behind Stable Diffusion, CLIP and DALL-E for inspiring me creating the
 foundation for this work ( Stability AI, and OpenAI ). Huggingface for code
-and infrastructure; GitHub, Python, Gradio, Numpy, Pillow and all other
-libraries and code indirectly used.
+and infrastructure; Lexica for excellent prompt search and image repo; GitHub, 
+Python, Gradio, Numpy, Pillow and all other libraries and code indirectly used.

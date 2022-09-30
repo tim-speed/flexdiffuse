@@ -1,8 +1,9 @@
 '''Pipeline, a modification of Img2Img from huggingface/diffusers'''
 import inspect
 import warnings
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 
 import PIL
@@ -107,21 +108,34 @@ class FlexPipeline(DiffusionPipeline):
         # set slice_size = `None` to disable `set_attention_slice`
         self.enable_attention_slicing(None)
 
+    def _latents_to_image(
+            self,
+            latents: torch.Tensor,
+            pil: bool = True) -> Union[np.ndarray, List[PIL.Image.Image]]:
+        # scale and decode the image latents with vae
+        latents = 1 / 0.18215 * latents
+        image = self.vae.decode(latents).sample # type: ignore
+
+        image = (image / 2 + 0.5).clamp(0, 1)
+        image = image.cpu().permute(0, 2, 3, 1).numpy()
+        if pil:
+            return self.numpy_to_pil(image)
+        return image
+
     @torch.no_grad()
-    def __call__(
-        self,
-        clip_embeddings: torch.Tensor,
-        init_image: Optional[Union[torch.Tensor, torch.FloatTensor,
-                                   PIL.Image.Image]] = None,
-        init_size: Tuple[int, int] = (512, 512),
-        strength: float = 0.6,
-        num_inference_steps: int = 50,
-        guidance_scale: float = 7.5,
-        eta: float = 0.0,
-        generator: Optional[torch.Generator] = None,
-        output_type: str = 'pil',
-        return_dict: bool = True,
-    ):
+    def __call__(self,
+                 clip_embeddings: torch.Tensor,
+                 init_image: Optional[Union[torch.Tensor, torch.FloatTensor,
+                                            PIL.Image.Image]] = None,
+                 init_size: Tuple[int, int] = (512, 512),
+                 strength: float = 0.6,
+                 num_inference_steps: int = 50,
+                 guidance_scale: float = 7.5,
+                 eta: float = 0.0,
+                 generator: Optional[torch.Generator] = None,
+                 output_type: str = 'pil',
+                 return_dict: bool = True,
+                 debug: bool = False):
         r'''
         Function invoked when calling the pipeline for generation.
         Args:
@@ -270,9 +284,12 @@ class FlexPipeline(DiffusionPipeline):
             extra_step_kwargs['eta'] = eta
 
         latents = init_latents
+        all_latents = None
+        if debug:
+            all_latents = [init_latents]
         for i, t in enumerate(
                 self.progress_bar(self.scheduler.timesteps[t_start:])):
-            t_index = t_start + i
+            t_index = t
 
             # expand the latents if we are doing classifier free guidance
             latent_model_input = torch.cat(
@@ -280,6 +297,7 @@ class FlexPipeline(DiffusionPipeline):
 
             # if we use LMSDiscreteScheduler, let's make sure latents are multiplied by sigmas
             if isinstance(self.scheduler, LMSDiscreteScheduler):
+                t_index = t_start + i
                 sigma = self.scheduler.sigmas[t_index] # type: ignore
                 # the model input needs to be scaled to match the continuous ODE formulation in K-LMS
                 latent_model_input = latent_model_input / ((sigma**2 + 1)**0.5)
@@ -296,32 +314,34 @@ class FlexPipeline(DiffusionPipeline):
                     noise_pred_text - noise_pred_uncond)
 
             # compute the previous noisy sample x_t -> x_t-1
-            if isinstance(self.scheduler, LMSDiscreteScheduler):
-                step = self.scheduler.step(
-                    noise_pred,
-                    t_index,
-                    latents, # type: ignore
-                    **extra_step_kwargs)
-            else:
-                step = self.scheduler.step(
-                    noise_pred,
-                    t,
-                    latents, # type: ignore
-                    **extra_step_kwargs)
+            step = self.scheduler.step(
+                noise_pred,
+                t_index,
+                latents, # type: ignore
+                **extra_step_kwargs)
             latents = step.prev_sample # type: ignore
+            if all_latents:
+                all_latents.append(latents)
 
-        # scale and decode the image latents with vae
-        latents = 1 / 0.18215 * latents
-        image = self.vae.decode(latents).sample # type: ignore
-
-        image = (image / 2 + 0.5).clamp(0, 1)
-        image = image.cpu().permute(0, 2, 3, 1).numpy()
-
-        if output_type == 'pil':
-            image = self.numpy_to_pil(image)
+        if all_latents:
+            image_batches = [
+                self._latents_to_image(l, output_type == 'pil')
+                for l in all_latents
+            ]
+            if isinstance(image_batches[0], list):
+                batch_images = []
+                for ib in image_batches:
+                    batch_images.extend(ib)
+            else:
+                batch_images = np.concatenate(
+                    image_batches, # type: ignore
+                    axis=0)
+        else:
+            batch_images = self._latents_to_image(latents, output_type == 'pil')
 
         if not return_dict:
-            return (image, False)
+            return (batch_images, False)
 
         return StableDiffusionPipelineOutput(
-            images=image, nsfw_content_detected=[False for _ in image])
+            images=batch_images,
+            nsfw_content_detected=[False for _ in batch_images])

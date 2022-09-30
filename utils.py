@@ -83,7 +83,8 @@ class Runner():
             steps: int = 10,
             guidance_scale: float = 8,
             samples: int = 1,
-            seed: Optional[int] = None):
+            seed: Optional[int] = None,
+            debug: bool = False):
 
         fp = f'i2i_ds{int(strength * 100)}' if init_image else 't2i'
         if guide_image:
@@ -127,7 +128,8 @@ class Runner():
                                        num_inference_steps=steps,
                                        guidance_scale=guidance_scale,
                                        generator=self.generator,
-                                       eta=self.eta)
+                                       eta=self.eta,
+                                       debug=debug)
                 images = output['sample'] # type: ignore
                 self.eta = time() - stime
                 for i, img in enumerate(images):

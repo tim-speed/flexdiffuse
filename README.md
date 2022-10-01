@@ -286,7 +286,7 @@ indicates high alignment with the prompt. Let's amp up the settings a bit.
 - Threshold Mult = 1.0
 - Threshold Floor = 0.2
 - Clustered = 0.0 ( Turned off cause it gave the deer a warped tree neck )
-- Linear = 1.0
+- Linear End = 1.0
 - Max Image Guidance = 1.0
 
 ![Generated with tuned settings](experiments/deer_tuned.png)
@@ -315,7 +315,7 @@ to:
 - Threshold Mult = 1.0
 - Threshold Floor = 0.1
 - Clustered = 0.0
-- Linear = 1.0
+- Linear End = 1.0
 - Max Image Guidance = 1.0
 
 ![Rock Monkey?](experiments/turtle_to_rock_monkey.png)
@@ -350,7 +350,7 @@ For this experiment I used all default settings, but turned the default image
 guidance features all to 0:
 - Threshold Mult = 0
 - Clustered = 0
-- Linear = 0
+- Linear End = 0
 - Max Image Guidance = 0
 
 This concept mapping is currently implemented after all these others as a sort
@@ -393,7 +393,7 @@ https://lexica.art/prompt/82bfb12d-86c7-412f-ab27-d3a08d9017af
 
 - Threshold = 1.0
 - Clustered = -0.5
-- Linear = 1.0
+- Linear End = 1.0
 - Max Image Guidance = 1.0
 
 ![Zeus modded and tuned](experiments/zeus_tuned.png)
@@ -423,7 +423,7 @@ https://lexica.art/prompt/e1fdbf56-a71c-43eb-ac4b-347bacf7c496
 
 - Threshold = -0.25
 - Clustered = 0.0
-- Linear = 1.0
+- Linear End = 1.0
 - Max Image Guidance = 1.0
 
 ![Generated with tuned settings](experiments/turtle_tuned.png)

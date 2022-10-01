@@ -135,19 +135,6 @@ def block(runner: Callable[[], utils.Runner]):
                                         interactive=True)
 
         with gr.Row(equal_height=True):
-            with gr.Column(scale=2, variant='panel'):
-                debug = gr.Checkbox(label='Export Debug Images', value=False)
-            with gr.Column(scale=1, variant='panel'):
-                guide_image_mode = gr.Radio(
-                    label='Mapping Priority',
-                    choices=['Text Order', 'Optimal Fit'],
-                    value='Optimal Fit',
-                    type='index')
-            with gr.Column(scale=1, variant='panel'):
-                guide_image_reuse = gr.Checkbox(label='Reuse Latents',
-                                                value=True)
-
-        with gr.Row():
             height = gr.Slider(minimum=64,
                                maximum=2048,
                                step=64,
@@ -158,6 +145,14 @@ def block(runner: Callable[[], utils.Runner]):
                               step=64,
                               label="Init Width",
                               value=512)
+            guide_image_mode = gr.Radio(label='Mapping Priority',
+                                        choices=['Text Order', 'Optimal Fit'],
+                                        value='Optimal Fit',
+                                        type='index')
+            with gr.Group(elem_id='cbgroup'):
+                guide_image_reuse = gr.Checkbox(label='Reuse Latents',
+                                                value=True)
+                debug = gr.Checkbox(label='Export Debug Images', value=False)
 
         gallery = gr.Gallery(label='Generated images',
                              show_label=False,

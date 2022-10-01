@@ -31,9 +31,14 @@ def launch():
             gap: 0;
             padding: 0;
         }
-        div.row>div.col>div, div.row>div.col>div>div, div.row>div.col fieldset {
+        div.row>div.col>div, div.row>div.col>div>div, div.row>div.col fieldset,\
+            #cbgroup, #cbgroup>div {
             min-height: 100%;
         }
+        div#cbgroup {
+            max-width: 25%
+        }
+        
     '''
     block = gr.Blocks(css=css)
 

@@ -81,6 +81,7 @@ class Runner():
             guide_image_clustered: float = 0.5,
             guide_image_linear: Tuple = (0.0, 0.5),
             guide_image_max_guidance: float = 0.5,
+            guide_image_header_max: float = 0.15,
             guide_image_mode: int = 0,
             guide_image_reuse: bool = True,
             strength: float = 0.6,
@@ -97,6 +98,8 @@ class Runner():
                    f'_ic{_i100(guide_image_clustered)}'
                    f'_il{_i100(guide_image_linear[0])}'
                    f'-{_i100(guide_image_linear[1])}'
+                   f'_mg{_i100(guide_image_max_guidance)}'
+                   f'_hm{_i100(guide_image_header_max)}'
                    f'_im{guide_image_mode:d}')
         fp += f'_st{steps}_gs{int(guidance_scale)}'
 
@@ -117,6 +120,7 @@ class Runner():
             guide_image_clustered=guide_image_clustered,
             guide_image_linear=guide_image_linear,
             guide_image_max_guidance=guide_image_max_guidance,
+            guide_image_header_max=guide_image_header_max,
             guide_image_mode=guide_image_mode,
             guide_image_reuse=guide_image_reuse)
 

@@ -227,6 +227,14 @@ This may also just be more of an issue with the pattern or rythm of the CLIP
 embeddings from image being nowhere near text.. and some kind of sequencer
 is needed, like maybe BLIP..
 
+### Actually, we can modify the header embedding a bit...
+
+So actually it seems the attention mechanism actually supports a little tuning
+of the header, but not too much. So we can adjust this with a new setting!!
+I've added a cap, default = 0.15 for modification of the header.
+Seems to work well. If you go to far.. like around 0.35 or so you'll start to
+get weird noise patterns.
+
 ## Experiments
 
 Everything here I've sourced from myself or https://lexica.art/ so there
@@ -360,6 +368,9 @@ demonstrate.
 ## Archived Experiments ( Need old version to replicate )
 They are broken by the introduction of threshold floor or removal of
 modification to the "header" embedding.
+Header embedding modification has been readded, so it is possible to generate
+these again, I just need to go through and find the ideal settings as its now
+an adjustable cap.
 
 
 ### Img2Img Zeus portrait to Anime?

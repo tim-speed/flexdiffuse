@@ -62,10 +62,7 @@ def _map_emb(img_emb: torch.Tensor,
     # Now map the img token per text token, without reusing tokens
     #   and skipping the first token, as it is a header not meant to
     #   be changed.
-    EDITABLE_TOKENS = txt_emb.shape[1] - 1
-    assert EDITABLE_TOKENS == 76, (f'EDITABLE_TOKENS expected to '
-                                   f'be 76 got {EDITABLE_TOKENS}')
-    mapped_tokens = np.zeros((EDITABLE_TOKENS, 2))
+    mapped_tokens = np.zeros((txt_emb.shape[1], 2))
     img_toks_used: Set[int] = set()
     # TODO-OPT: Optimize
     for img_i, txt_i, s in all_matches:
@@ -139,9 +136,7 @@ def _clustered_guidance(mapped_tokens: np.ndarray, threshold: float,
     Returns:
         None | torch.Tensor: Clustered embedding weights
     '''
-    EDITABLE_TOKENS = mapped_tokens.shape[0]
-    assert EDITABLE_TOKENS == 76, (f'EDITABLE_TOKENS expected to '
-                                   f'be 76 got {EDITABLE_TOKENS}')
+    token_len = mapped_tokens.shape[0]
     clustered_weights = None
     peaks: List[int] = []
     for txt_i, (_, s) in enumerate(mapped_tokens[1:-1], 1):
@@ -157,11 +152,12 @@ def _clustered_guidance(mapped_tokens: np.ndarray, threshold: float,
             d = p2 - p1
             if d > 0:
                 valleys.append(p1 + math.ceil(d / 2))
-        if peaks[-1] != EDITABLE_TOKENS - 1:
-            valleys.append(EDITABLE_TOKENS - 1)
+        if peaks[-1] != token_len - 1:
+            valleys.append(token_len - 1)
         # Peaks to Valleys
-        clustered_weights = _traverse_a_to_b(
-            peaks, valleys, torch.ones((EDITABLE_TOKENS,)), 1.0) * guidance
+        clustered_weights = _traverse_a_to_b(peaks, valleys,
+                                             torch.ones(
+                                                 (token_len,)), 1.0) * guidance
     return clustered_weights
 
 
@@ -243,6 +239,7 @@ class Guide():
                guide_image_clustered: float = 0.5,
                guide_image_linear: Tuple[float, float] = (0.0, 0.5),
                guide_image_max_guidance: float = 0.5,
+               guide_image_header_max: float = 0.15,
                guide_image_mode: int = GUIDE_ORDER_ALIGN,
                guide_image_reuse: bool = True) -> torch.Tensor:
         '''Generate embeddings from text or image or tween their space of\
@@ -271,6 +268,8 @@ class Guide():
             guide_image_max_guidance (float, optional): Cap on the overall\
                 tweening, regardless of multiplier, does not affect mapping\
                 concepts. Defaults to 0.5.
+            guide_image_header_max (float, optional): Caps the manipulation of\
+                the leading header token. Defaults to 0.15.
             guide_image_mode (int, optional): Image guidance mode, to priorize\
                 based on aligment first or text embedding order, effects most\
                 noticiable when playing with the `reuse` parameter. Defaults\
@@ -300,7 +299,6 @@ class Guide():
         # TODO-OPT: Remove / Refactor
         CLIP_MAX_TOKENS = self.tokenizer.model_max_length
         assert CLIP_MAX_TOKENS == 77
-        EDITABLE_TOKENS = CLIP_MAX_TOKENS - 1 # The first token is not editable
 
         text_input = None
         text_embeddings: torch.Tensor | None = None
@@ -382,7 +380,7 @@ class Guide():
             #   backend / style features
             img_weights = torch.linspace(guide_image_linear[0],
                                          guide_image_linear[1],
-                                         steps=EDITABLE_TOKENS)
+                                         steps=CLIP_MAX_TOKENS)
             if guide_image_clustered != 0:
                 clustered_weights = _clustered_guidance(mapped_tokens,
                                                         avg_similarity,
@@ -392,13 +390,19 @@ class Guide():
 
             if guide_image_threshold_mult != 0:
                 th_weights = torch.ones(
-                    (EDITABLE_TOKENS,)) * guide_image_threshold_mult
+                    (CLIP_MAX_TOKENS,)) * guide_image_threshold_mult
                 for txt_i, (_, s) in enumerate(mapped_tokens):
                     if s < guide_image_threshold_floor:
                         th_weights[txt_i] = 0
                 img_weights = _blend_weights(img_weights, th_weights)
 
-            img_weights = torch.cat((torch.zeros((1,)), img_weights), dim=0)
+            # Cap the header token
+            if guide_image_header_max < 1.0:
+                hw = img_weights[0].item()
+                if hw >= 0:
+                    img_weights[0] = min(hw, guide_image_header_max)
+                else:
+                    img_weights[0] = max(hw, -guide_image_header_max)
             print('Image Weights:', img_weights.shape, ':', img_weights)
             # tween text and image embeddings
             # TODO-OPT: Vectorize, probably don't need if conditions
@@ -467,9 +471,9 @@ class Guide():
                   'this will generate weird stuff, enjoy :)\n'
                   'If you\'re bored try an image of yourself '
                   'and see what the model thinks.')
-            clip_embeddings = torch.cat(
-                (self.placeholder_embed[:, :1, :],
-                 image_embeddings[:, :EDITABLE_TOKENS, :]),
-                dim=1)
+            clip_embeddings = image_embeddings[:, :CLIP_MAX_TOKENS, :]
+            d_emb = self.placeholder_embed[:, 0, :] - clip_embeddings[:, 0, :]
+            # Move 85% towards the text header
+            clip_embeddings[:, 0, :] += d_emb * 0.85
 
         return clip_embeddings

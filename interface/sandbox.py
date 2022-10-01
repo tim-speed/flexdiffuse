@@ -9,9 +9,9 @@ def block(runner: Callable[[], utils.Runner]):
     def run(prompt, init_image, guide_image, height, width, mapping_concepts,
             guide_image_threshold_mult, guide_image_threshold_floor,
             guide_image_clustered, guide_image_linear_start,
-            guide_image_linear_end, guide_image_max_guidance, guide_image_mode,
-            guide_image_reuse, strength, steps, guidance_scale, samples, seed,
-            debug):
+            guide_image_linear_end, guide_image_max_guidance,
+            guide_image_header, guide_image_mode, guide_image_reuse, strength,
+            steps, guidance_scale, samples, seed, debug):
         if debug and samples * steps > 100:
             samples = 100 // steps
             print(f'Debug detected, forcing samples to {samples}'
@@ -21,8 +21,9 @@ def block(runner: Callable[[], utils.Runner]):
             guide_image_threshold_mult, guide_image_threshold_floor,
             guide_image_clustered,
             (guide_image_linear_start, guide_image_linear_end),
-            guide_image_max_guidance, guide_image_mode, guide_image_reuse,
-            strength, steps, guidance_scale, samples, seed, debug)
+            guide_image_max_guidance, guide_image_header, guide_image_mode,
+            guide_image_reuse, strength, steps, guidance_scale, samples, seed,
+            debug)
         return imgs
 
     with gr.Group():
@@ -78,14 +79,14 @@ def block(runner: Callable[[], utils.Runner]):
                     minimum=-1,
                     maximum=1,
                     value=0.25,
-                    step=0.05)
+                    step=0.01)
             with gr.Column(scale=1, variant='panel'):
                 guide_image_threshold_floor = gr.Slider(
                     label='Threshold "Match" Guidance Floor ( Image )',
                     minimum=0,
                     maximum=1,
                     value=0.75,
-                    step=0.05)
+                    step=0.01)
 
         with gr.Row(equal_height=True):
             with gr.Column(scale=2, variant='panel'):
@@ -100,14 +101,14 @@ def block(runner: Callable[[], utils.Runner]):
                     minimum=-1,
                     maximum=1,
                     value=0.1,
-                    step=0.05)
+                    step=0.01)
             with gr.Column(scale=1, variant='panel'):
                 guide_image_linear_end = gr.Slider(
                     label='Linear Guidance End ( Image )',
                     minimum=-1,
                     maximum=1,
                     value=0.5,
-                    step=0.05)
+                    step=0.01)
 
         with gr.Row(equal_height=True):
             guidance_scale = gr.Slider(label='Guidance Scale ( Overall )',
@@ -120,19 +121,28 @@ def block(runner: Callable[[], utils.Runner]):
                 minimum=-0.5,
                 maximum=0.5,
                 value=0.15,
-                step=0.05)
+                step=0.01)
 
         with gr.Row(equal_height=True):
-            seed = gr.Number(label='Seed',
-                             precision=0,
-                             value=0,
-                             interactive=True)
-            guide_image_max = gr.Slider(label='Max Image Guidance',
-                                        minimum=0,
-                                        maximum=1,
-                                        value=0.35,
-                                        step=0.05,
-                                        interactive=True)
+            with gr.Column(scale=2, variant='panel'):
+                seed = gr.Number(label='Seed',
+                                 precision=0,
+                                 value=0,
+                                 interactive=True)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_max = gr.Slider(label='Max Image Guidance',
+                                            minimum=0,
+                                            maximum=1,
+                                            value=0.35,
+                                            step=0.01,
+                                            interactive=True)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_header = gr.Slider(label='Max Image Header Mult',
+                                               minimum=0,
+                                               maximum=1,
+                                               value=0.15,
+                                               step=0.01,
+                                               interactive=True)
 
         with gr.Row(equal_height=True):
             height = gr.Slider(minimum=64,
@@ -164,8 +174,9 @@ def block(runner: Callable[[], utils.Runner]):
                           mapping_concepts, guide_image_threshold_mult,
                           guide_image_threshold_floor, guide_image_clustered,
                           guide_image_linear_start, guide_image_linear_end,
-                          guide_image_max, guide_image_mode, guide_image_reuse,
-                          strength, steps, guidance_scale, samples, seed, debug
+                          guide_image_max, guide_image_header, guide_image_mode,
+                          guide_image_reuse, strength, steps, guidance_scale,
+                          samples, seed, debug
                       ],
                       outputs=[gallery])
         generate.click(run,
@@ -174,7 +185,8 @@ def block(runner: Callable[[], utils.Runner]):
                            mapping_concepts, guide_image_threshold_mult,
                            guide_image_threshold_floor, guide_image_clustered,
                            guide_image_linear_start, guide_image_linear_end,
-                           guide_image_max, guide_image_mode, guide_image_reuse,
-                           strength, steps, guidance_scale, samples, seed, debug
+                           guide_image_max, guide_image_header,
+                           guide_image_mode, guide_image_reuse, strength, steps,
+                           guidance_scale, samples, seed, debug
                        ],
                        outputs=[gallery])

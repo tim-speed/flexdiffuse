@@ -8,9 +8,10 @@ import utils
 def block(runner: Callable[[], utils.Runner]):
     def run(prompt, init_image, guide_image, height, width, mapping_concepts,
             guide_image_threshold_mult, guide_image_threshold_floor,
-            guide_image_clustered, guide_image_linear, guide_image_max_guidance,
-            guide_image_mode, guide_image_reuse, strength, steps,
-            guidance_scale, samples, seed, debug):
+            guide_image_clustered, guide_image_linear_start,
+            guide_image_linear_end, guide_image_max_guidance, guide_image_mode,
+            guide_image_reuse, strength, steps, guidance_scale, samples, seed,
+            debug):
         if debug and samples * steps > 100:
             samples = 100 // steps
             print(f'Debug detected, forcing samples to {samples}'
@@ -18,9 +19,10 @@ def block(runner: Callable[[], utils.Runner]):
         imgs, grid = runner().gen(
             prompt, init_image, guide_image, (height, width), mapping_concepts,
             guide_image_threshold_mult, guide_image_threshold_floor,
-            guide_image_clustered, guide_image_linear, guide_image_max_guidance,
-            guide_image_mode, guide_image_reuse, strength, steps,
-            guidance_scale, samples, seed, debug)
+            guide_image_clustered,
+            (guide_image_linear_start, guide_image_linear_end),
+            guide_image_max_guidance, guide_image_mode, guide_image_reuse,
+            strength, steps, guidance_scale, samples, seed, debug)
         return imgs
 
     with gr.Group():
@@ -86,17 +88,26 @@ def block(runner: Callable[[], utils.Runner]):
                     step=0.05)
 
         with gr.Row(equal_height=True):
-            samples = gr.Slider(label='Batches ( Images )',
-                                minimum=1,
-                                maximum=16,
-                                value=4,
-                                step=1)
-            guide_image_clustered = gr.Slider(
-                label='Clustered "Match" Guidance ( Image )',
-                minimum=-0.5,
-                maximum=0.5,
-                value=0.15,
-                step=0.05)
+            with gr.Column(scale=2, variant='panel'):
+                samples = gr.Slider(label='Batches ( Images )',
+                                    minimum=1,
+                                    maximum=16,
+                                    value=4,
+                                    step=1)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_linear_start = gr.Slider(
+                    label='Linear Guidance Start ( Image )',
+                    minimum=-1,
+                    maximum=1,
+                    value=0.1,
+                    step=0.05)
+            with gr.Column(scale=1, variant='panel'):
+                guide_image_linear_end = gr.Slider(
+                    label='Linear Guidance End ( Image )',
+                    minimum=-1,
+                    maximum=1,
+                    value=0.5,
+                    step=0.05)
 
         with gr.Row(equal_height=True):
             guidance_scale = gr.Slider(label='Guidance Scale ( Overall )',
@@ -104,11 +115,11 @@ def block(runner: Callable[[], utils.Runner]):
                                        maximum=20,
                                        value=8,
                                        step=0.5)
-            guide_image_linear = gr.Slider(
-                label='Linear "Style" Guidance ( Image )',
-                minimum=-1,
-                maximum=1,
-                value=0.5,
+            guide_image_clustered = gr.Slider(
+                label='Clustered "Match" Guidance ( Image )',
+                minimum=-0.5,
+                maximum=0.5,
+                value=0.15,
                 step=0.05)
 
         with gr.Row(equal_height=True):
@@ -157,9 +168,9 @@ def block(runner: Callable[[], utils.Runner]):
                           prompt, init_image, guide_image, height, width,
                           mapping_concepts, guide_image_threshold_mult,
                           guide_image_threshold_floor, guide_image_clustered,
-                          guide_image_linear, guide_image_max, guide_image_mode,
-                          guide_image_reuse, strength, steps, guidance_scale,
-                          samples, seed, debug
+                          guide_image_linear_start, guide_image_linear_end,
+                          guide_image_max, guide_image_mode, guide_image_reuse,
+                          strength, steps, guidance_scale, samples, seed, debug
                       ],
                       outputs=[gallery])
         generate.click(run,
@@ -167,8 +178,8 @@ def block(runner: Callable[[], utils.Runner]):
                            prompt, init_image, guide_image, height, width,
                            mapping_concepts, guide_image_threshold_mult,
                            guide_image_threshold_floor, guide_image_clustered,
-                           guide_image_linear, guide_image_max,
-                           guide_image_mode, guide_image_reuse, strength, steps,
-                           guidance_scale, samples, seed, debug
+                           guide_image_linear_start, guide_image_linear_end,
+                           guide_image_max, guide_image_mode, guide_image_reuse,
+                           strength, steps, guidance_scale, samples, seed, debug
                        ],
                        outputs=[gallery])

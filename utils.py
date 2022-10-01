@@ -25,6 +25,10 @@ grid_dir = f'{output_dir}/grids'
 os.makedirs(grid_dir, exist_ok=True)
 
 
+def _i100(f: float) -> int:
+    return int(f * 100)
+
+
 def image_grid(imgs: Sequence[Image.Image]):
     '''Builds an image that is a grid arrangement of all provided images'''
     num = len(imgs)
@@ -75,7 +79,7 @@ class Runner():
             guide_image_threshold_mult: float = 0.5,
             guide_image_threshold_floor: float = 0.5,
             guide_image_clustered: float = 0.5,
-            guide_image_linear: float = 0.5,
+            guide_image_linear: Tuple = (0.0, 0.5),
             guide_image_max_guidance: float = 0.5,
             guide_image_mode: int = 0,
             guide_image_reuse: bool = True,
@@ -88,10 +92,11 @@ class Runner():
 
         fp = f'i2i_ds{int(strength * 100)}' if init_image else 't2i'
         if guide_image:
-            fp += (f'_itm{int(guide_image_threshold_mult * 100)}'
-                   f'_itf{int(guide_image_threshold_floor * 100)}'
-                   f'_ic{int(guide_image_clustered * 100)}'
-                   f'_il{int(guide_image_linear * 100)}'
+            fp += (f'_itm{_i100(guide_image_threshold_mult)}'
+                   f'_itf{_i100(guide_image_threshold_floor)}'
+                   f'_ic{_i100(guide_image_clustered)}'
+                   f'_il{_i100(guide_image_linear[0])}'
+                   f'-{_i100(guide_image_linear[1])}'
                    f'_im{guide_image_mode:d}')
         fp += f'_st{steps}_gs{int(guidance_scale)}'
 

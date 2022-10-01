@@ -241,7 +241,8 @@ otherwise mentioned:
 - Init Height & Width = 512
 - Threshold Match Guidance = 0.25
 - Clustered Match Guidance = 0.25
-- Linear Style Guidance = 0.5
+- Linear Style Guidance Start = 0.0
+- Linear Style Guidance End = 0.5
 - Max Image Guidance = 0.35
 - Optimal Fit Mapping with reused Latents
 

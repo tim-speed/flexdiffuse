@@ -241,7 +241,7 @@ class Guide():
                guide_image_threshold_mult: float = 0.5,
                guide_image_threshold_floor: float = 0.5,
                guide_image_clustered: float = 0.5,
-               guide_image_linear: float = 0.5,
+               guide_image_linear: Tuple[float, float] = (0.0, 0.5),
                guide_image_max_guidance: float = 0.5,
                guide_image_mode: int = GUIDE_ORDER_ALIGN,
                guide_image_reuse: bool = True) -> torch.Tensor:
@@ -263,9 +263,11 @@ class Guide():
             guide_image_clustered (float, optional): A clustered match guidance\
                 approach, not as good as threshold but can make some minor\
                 adjustments. Defaults to 0.5.
-            guide_image_linear (float, optional): Linear style blending from\
-                the end of the prompt, good for mapping subtle or background\
-                styles from image to text. Defaults to 0.5.
+            guide_image_linear (Tuple[float, float], optional): Linear style\
+                blending first value mapped to the start of the prompt, the\
+                second is mapped to the end. Can be used to push the prompt\
+                towards the image at the front or back, or away from it.\
+                Defaults to (0.0, 0.5).
             guide_image_max_guidance (float, optional): Cap on the overall\
                 tweening, regardless of multiplier, does not affect mapping\
                 concepts. Defaults to 0.5.
@@ -371,14 +373,16 @@ class Guide():
                   f'Threshold: {guide_image_threshold_floor:.2%}, '
                   f'Threshold Multiplier: {guide_image_threshold_mult:.2%}, '
                   f'Clustered: {guide_image_clustered:.2%}, '
-                  f'Linear: {guide_image_linear:.2%}, '
+                  f'Linear: {guide_image_linear[0]:.2%}'
+                  f'-{guide_image_linear[1]:.2%}, '
                   f'Guidance Max: {guide_image_max_guidance:.2%}')
             # TODO: Guidance slope param to make either linear or grouped
             #   slopes quadratic .. AKA nice an smooth instead of sharp
             # Init img weights from linear slope, front to back, to amplify
             #   backend / style features
-            img_weights = torch.linspace(
-                0.0, 1.0, steps=EDITABLE_TOKENS) * guide_image_linear
+            img_weights = torch.linspace(guide_image_linear[0],
+                                         guide_image_linear[1],
+                                         steps=EDITABLE_TOKENS)
             if guide_image_clustered != 0:
                 clustered_weights = _clustered_guidance(mapped_tokens,
                                                         avg_similarity,

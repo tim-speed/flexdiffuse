@@ -140,7 +140,7 @@ def block(runner: Callable[[], utils.Runner]):
                 guide_image_header = gr.Slider(label='Max Image Header Mult',
                                                minimum=0,
                                                maximum=1,
-                                               value=0.15,
+                                               value=0,
                                                step=0.01,
                                                interactive=True)
 

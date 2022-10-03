@@ -201,6 +201,125 @@ def preprocess(image: Image | Any) -> torch.Tensor:
     return 2.0 * image - 1.0
 
 
+class Tweener():
+    def __init__(self,
+                 threshold: Tuple[float, float] = (0.5, 0.5),
+                 linear: Tuple[float, float] = (0.0, 0.5),
+                 clustered: float = 0.5,
+                 max_guidance: float = 0.5,
+                 header_max: float = 0.15,
+                 align_mode: int = GUIDE_ORDER_ALIGN,
+                 mapping_reuse: bool = True) -> None:
+        self.threshold_floor = threshold[0]
+        self.threshold_mult = threshold[1]
+        self.linear_start = linear[0]
+        self.linear_end = linear[1]
+        self.clustered = clustered
+        self.max_guidance = max_guidance
+        self.header_max = header_max
+        self.align_mode = align_mode
+        self.mapping_reuse = mapping_reuse
+
+    def tween(self, base_emb: torch.Tensor,
+              alt_emb: torch.Tensor) -> torch.Tensor:
+        mapped_tokens = _map_emb(alt_emb, base_emb, self.mapping_reuse,
+                                 self.align_mode)
+        avg_similarity = mapped_tokens[:, 1].mean()
+        print(f'Tweening with, Avg Similarity: {avg_similarity:.2%}, '
+              f'Threshold: {self.threshold_floor:.2%}, '
+              f'Threshold Multiplier: {self.threshold_mult:.2%}, '
+              f'Clustered: {self.clustered:.2%}, '
+              f'Linear: {self.linear_start:.2%}'
+              f'-{self.linear_end:.2%}, '
+              f'Guidance Max: {self.max_guidance:.2%}')
+        # TODO: Guidance slope param to make either linear or grouped
+        #   slopes quadratic .. AKA nice an smooth instead of sharp
+        # Init img weights from linear slope, front to back, to amplify
+        #   backend / style features
+        alt_weights = torch.linspace(self.linear_start,
+                                     self.linear_end,
+                                     steps=base_emb.shape[1])
+        if self.clustered != 0:
+            clustered_weights = _clustered_guidance(mapped_tokens,
+                                                    avg_similarity,
+                                                    self.clustered)
+            if clustered_weights is not None:
+                alt_weights = _blend_weights(alt_weights, clustered_weights)
+
+        if self.threshold_mult != 0:
+            th_weights = torch.ones_like(alt_weights) * self.threshold_mult
+            for txt_i, (_, s) in enumerate(mapped_tokens):
+                if s < self.threshold_floor:
+                    th_weights[txt_i] = 0
+            alt_weights = _blend_weights(alt_weights, th_weights)
+
+        # Cap the header token
+        if self.header_max < 1.0:
+            hw = alt_weights[0].item()
+            if hw >= 0:
+                alt_weights[0] = min(hw, self.header_max)
+            else:
+                alt_weights[0] = max(hw, -self.header_max)
+        print('Alt Embed Blend Weights:', alt_weights.shape, ':', alt_weights)
+        # tween text and image embeddings
+        # TODO-OPT: Vectorize, probably don't need if conditions
+        clip_embeddings = torch.zeros_like(base_emb)
+        for txt_i, (img_i, s) in enumerate(mapped_tokens):
+            sd = 1.0 - s
+            iw = min(alt_weights[txt_i].item(), self.max_guidance)
+            if iw == 0:
+                # Leave as is
+                clip_embeddings[0, txt_i] = base_emb[0, txt_i]
+            elif abs(iw) >= sd:
+                # We cap at taking all the image
+                clip_embeddings[0, txt_i] = alt_emb[0, int(img_i)]
+            else:
+                # Text towards image
+                d_emb = alt_emb[0, int(img_i)] - base_emb[0, txt_i]
+                clip_embeddings[0, txt_i] = base_emb[0, txt_i] + (d_emb * iw)
+        return clip_embeddings
+
+
+class ConceptMapper():
+    def __init__(self, image_embeddings: torch.Tensor,
+                 concept_embeddings: torch.Tensor) -> None:
+        self.image_embeddings = image_embeddings
+        self.concept_embeddings = concept_embeddings
+        self.concept_mappings = _map_emb(image_embeddings, concept_embeddings,
+                                         False, GUIDE_ORDER_TEXT)
+        # Print the result
+        print(f'Image Feature and Concept alignment:')
+        for txt_i, (img_i, s) in enumerate(self.concept_mappings, 1):
+            print(f'ConceptTok {txt_i:>02d} ImgTok '
+                  f'{int(img_i):>02d} {100 * s:.2f}%')
+
+    def map(self,
+            base_embeddings: torch.Tensor,
+            output_embeddings: torch.Tensor | None = None) -> torch.Tensor:
+        if output_embeddings is None:
+            output_embeddings = base_embeddings.clone()
+        concept_text = _map_emb(self.concept_embeddings, base_embeddings, True,
+                                GUIDE_ORDER_ALIGN)
+        # Print the result
+        print(f'Concept Feature and Token alignment:')
+        for txt_i, (concept_i, s) in enumerate(concept_text, 1):
+            concept_i = int(concept_i)
+            cmi = int(concept_i) - 1 # because mappings start from 1
+            if cmi < 0:
+                # skip header token, it'd be weird for it to map though
+                continue
+            concept_image_i, concept_image_s = self.concept_mappings[cmi]
+            concept_image_i = int(concept_image_i)
+            if s > 0.9:
+                output_embeddings[0, txt_i] = self.image_embeddings[
+                    0, concept_image_i]
+            print(f'TxtTok {txt_i:>02d} ConceptTok '
+                  f'{concept_i:>02d} {s:.2%} ImageTok '
+                  f'{concept_image_i:>03d} {concept_image_s:.2%}'
+                  + (' MAPPED' if s > 0.9 else ''))
+        return output_embeddings
+
+
 class Guide():
     def __init__(self,
                  clip: CLIPModel,
@@ -220,15 +339,61 @@ class Guide():
         self.device = device
         # Placeholder embed is used for its header token in direct image
         #   guidance
-        placeholder_tokens = self.tokenizer(
-            '{}',
+        self.placeholder_embed = self.txt_emb('{}')
+
+    def txt_emb(self, text: str | List[str]) -> torch.Tensor:
+        '''Encode text embeddings for provided text
+
+        Args:
+            text (str | List[str]): Text or array of texts to encode.
+
+        Returns:
+            torch.Tensor: Encoded text embeddings.
+        '''
+        # get prompt text embeddings
+        text_input = self.tokenizer(
+            text,
             padding='max_length',
             max_length=self.tokenizer.model_max_length,
             truncation=True,
             return_tensors='pt',
         )
-        self.placeholder_embed = self.clip.text_model(
-            placeholder_tokens.input_ids.to(self.device))[0]
+        return self.clip.text_model(text_input.input_ids.to(self.device))[0]
+
+    def img_emb(self, image: Image) -> torch.Tensor:
+        '''Encode image embeddings for provided image
+
+        Args:
+            image (Image): The PIL.Image to encode.
+
+        Returns:
+            torch.Tensor: Encoded image embeddings.
+        '''
+        guide_tensor = preprocess(image)
+        crop_size = min(guide_tensor.shape[-2:])
+        guide_tensor = center_crop(guide_tensor, [crop_size, crop_size])
+        guide_tensor = resize(guide_tensor, [CLIP_IMAGE_SIZE, CLIP_IMAGE_SIZE],
+                              interpolation=InterpolationMode.BICUBIC,
+                              antialias=True)
+        guide_tensor = normalize(
+            guide_tensor, [0.48145466, 0.4578275, 0.40821073],
+            [0.26862954, 0.26130258, 0.27577711]).to(self.device)
+
+        hidden_states = self.clip.vision_model.embeddings(guide_tensor)
+        hidden_states = self.clip.vision_model.pre_layrnorm(hidden_states)
+
+        encoder_outputs = self.clip.vision_model.encoder(
+            inputs_embeds=hidden_states,
+            output_attentions=False,
+            output_hidden_states=False,
+            return_dict=True,
+        )
+
+        last_hidden_state = encoder_outputs[0]
+        pooled_output = last_hidden_state[:, :, :]
+        pooled_output = self.clip.vision_model.post_layernorm(pooled_output)
+
+        return self.clip.visual_projection(pooled_output)
 
     def embeds(self,
                prompt: str | List[str] = '',
@@ -296,157 +461,36 @@ class Guide():
         if not prompt and guide_image is None:
             raise ValueError('No prompt, or guide image provided.')
 
-        # TODO-OPT: Remove / Refactor
-        CLIP_MAX_TOKENS = self.tokenizer.model_max_length
-        assert CLIP_MAX_TOKENS == 77
-
-        text_input = None
+        # Get embeddings and setup tweening and mapping
         text_embeddings: torch.Tensor | None = None
         image_embeddings: torch.Tensor | None = None
-        concept_embeddings: torch.Tensor | None = None
+        concept_mapper: ConceptMapper | None = None
         if prompt:
             # get prompt text embeddings
-            text_input = self.tokenizer(
-                prompt,
-                padding='max_length',
-                max_length=self.tokenizer.model_max_length,
-                truncation=True,
-                return_tensors='pt',
-            )
-            text_embeddings = self.clip.text_model(
-                text_input.input_ids.to(self.device))[0]
+            text_embeddings = self.txt_emb(prompt)
         if guide_image is not None:
-            guide_tensor = preprocess(guide_image)
-            crop_size = min(guide_tensor.shape[-2:])
-            guide_tensor = center_crop(guide_tensor, [crop_size, crop_size])
-            guide_tensor = resize(guide_tensor,
-                                  [CLIP_IMAGE_SIZE, CLIP_IMAGE_SIZE],
-                                  interpolation=InterpolationMode.BICUBIC,
-                                  antialias=True)
-            guide_tensor = normalize(
-                guide_tensor, [0.48145466, 0.4578275, 0.40821073],
-                [0.26862954, 0.26130258, 0.27577711]).to(self.device)
-
-            hidden_states = self.clip.vision_model.embeddings(guide_tensor)
-            hidden_states = self.clip.vision_model.pre_layrnorm(hidden_states)
-
-            encoder_outputs = self.clip.vision_model.encoder(
-                inputs_embeds=hidden_states,
-                output_attentions=False,
-                output_hidden_states=False,
-                return_dict=True,
-            )
-
-            last_hidden_state = encoder_outputs[0]
-            pooled_output = last_hidden_state[:, :, :]
-            pooled_output = self.clip.vision_model.post_layernorm(pooled_output)
-
-            image_embeddings = self.clip.visual_projection(pooled_output)
-
-        if mapping_concepts and image_embeddings is not None:
-            concept_input = self.tokenizer(
-                mapping_concepts,
-                padding='max_length',
-                max_length=self.tokenizer.model_max_length,
-                truncation=True,
-                return_tensors='pt',
-            )
-            concept_embeddings = self.clip.text_model(
-                concept_input.input_ids.to(self.device))[0]
-            assert concept_embeddings is not None
-            concept_mappings = _map_emb(image_embeddings, concept_embeddings,
-                                        False, GUIDE_ORDER_TEXT)
-            # Print the result
-            print(f'Image Feature and Concept alignment:')
-            for txt_i, (img_i, s) in enumerate(concept_mappings, 1):
-                print(f'ConceptTok {txt_i:>02d} ImgTok '
-                      f'{int(img_i):>02d} {100 * s:.2f}%')
+            image_embeddings = self.img_emb(guide_image)
+            if mapping_concepts:
+                concept_mapper = ConceptMapper(image_embeddings,
+                                               self.txt_emb(mapping_concepts))
+        tweener = Tweener(
+            (guide_image_threshold_floor, guide_image_threshold_mult),
+            guide_image_linear, guide_image_clustered, guide_image_max_guidance,
+            guide_image_header_max, guide_image_mode, guide_image_reuse)
 
         def _tween(img_emb: torch.Tensor,
                    txt_emb: torch.Tensor) -> torch.Tensor:
-            mapped_tokens = _map_emb(img_emb, txt_emb, guide_image_reuse,
-                                     guide_image_mode)
-            avg_similarity = mapped_tokens[:, 1].mean()
-            print(f'Avg Similarity: {avg_similarity:.2%}, '
-                  f'Threshold: {guide_image_threshold_floor:.2%}, '
-                  f'Threshold Multiplier: {guide_image_threshold_mult:.2%}, '
-                  f'Clustered: {guide_image_clustered:.2%}, '
-                  f'Linear: {guide_image_linear[0]:.2%}'
-                  f'-{guide_image_linear[1]:.2%}, '
-                  f'Guidance Max: {guide_image_max_guidance:.2%}')
-            # TODO: Guidance slope param to make either linear or grouped
-            #   slopes quadratic .. AKA nice an smooth instead of sharp
-            # Init img weights from linear slope, front to back, to amplify
-            #   backend / style features
-            img_weights = torch.linspace(guide_image_linear[0],
-                                         guide_image_linear[1],
-                                         steps=CLIP_MAX_TOKENS)
-            if guide_image_clustered != 0:
-                clustered_weights = _clustered_guidance(mapped_tokens,
-                                                        avg_similarity,
-                                                        guide_image_clustered)
-                if clustered_weights is not None:
-                    img_weights = _blend_weights(img_weights, clustered_weights)
-
-            if guide_image_threshold_mult != 0:
-                th_weights = torch.ones(
-                    (CLIP_MAX_TOKENS,)) * guide_image_threshold_mult
-                for txt_i, (_, s) in enumerate(mapped_tokens):
-                    if s < guide_image_threshold_floor:
-                        th_weights[txt_i] = 0
-                img_weights = _blend_weights(img_weights, th_weights)
-
-            # Cap the header token
-            if guide_image_header_max < 1.0:
-                hw = img_weights[0].item()
-                if hw >= 0:
-                    img_weights[0] = min(hw, guide_image_header_max)
-                else:
-                    img_weights[0] = max(hw, -guide_image_header_max)
-            print('Image Weights:', img_weights.shape, ':', img_weights)
-            # tween text and image embeddings
-            # TODO-OPT: Vectorize, probably don't need if conditions
-            clip_embeddings = torch.zeros_like(txt_emb)
-            for txt_i, (img_i, s) in enumerate(mapped_tokens):
-                sd = 1.0 - s
-                iw = min(img_weights[txt_i].item(), guide_image_max_guidance)
-                if iw == 0:
-                    # Leave as is
-                    clip_embeddings[0, txt_i] = txt_emb[0, txt_i]
-                elif abs(iw) >= sd:
-                    # We cap at taking all the image
-                    clip_embeddings[0, txt_i] = img_emb[0, int(img_i)]
-                else:
-                    # Text towards image
-                    d_emb = img_emb[0, int(img_i)] - txt_emb[0, txt_i]
-                    clip_embeddings[0, txt_i] = txt_emb[0, txt_i] + (d_emb * iw)
-
-            # TODO: Add more customization for this feature, combine with max
-            #   guidance etc..
-            if concept_embeddings is not None:
-                concept_text = _map_emb(concept_embeddings, txt_emb, True,
-                                        GUIDE_ORDER_ALIGN)
-                # Print the result
-                print(f'Concept Feature and Token alignment:')
-                for txt_i, (concept_i, s) in enumerate(concept_text, 1):
-                    concept_i = int(concept_i)
-                    cmi = int(concept_i) - 1 # because mappings start from 1
-                    if cmi < 0:
-                        # skip header token, it'd be weird for it to map though
-                        continue
-                    concept_image_i, concept_image_s = concept_mappings[cmi]
-                    concept_image_i = int(concept_image_i)
-                    if s > 0.9:
-                        clip_embeddings[0, txt_i] = img_emb[0, concept_image_i]
-                    print(f'TxtTok {txt_i:>02d} ConceptTok '
-                          f'{concept_i:>02d} {s:.2%} ImageTok '
-                          f'{concept_image_i:>03d} {concept_image_s:.2%}'
-                          + (' MAPPED' if s > 0.9 else ''))
+            clip_embeddings = tweener.tween(txt_emb, img_emb)
+            if concept_mapper is not None:
+                # TODO: Add more customization for this feature, combine with
+                #   max guidance etc..
+                clip_embeddings = concept_mapper.map(txt_emb, clip_embeddings)
             print('Tweened text and image embeddings:', img_emb.shape,
                   ' text shape:', txt_emb.shape, ' embed shape:',
                   clip_embeddings.shape)
             return clip_embeddings
 
+        # Perform possible tweening based on available embeddings
         if text_embeddings is not None:
             if image_embeddings is not None:
                 if text_embeddings.shape[0] > 1:
@@ -462,7 +506,8 @@ class Guide():
                 clip_embeddings: torch.Tensor = text_embeddings
         else:
             assert image_embeddings is not None
-            # Select the first CLIP_MAX_TOKENS image embedding tokens only
+            # Select the first self.tokenizer.model_max_length image embedding
+            #   tokens only.
             # NOTE: This is not good guidance, StableDiffusion wasn't trained
             #   for this. We need to map to prompts.
             # TODO: Build a model that can resequence image embeddings to
@@ -471,7 +516,8 @@ class Guide():
                   'this will generate weird stuff, enjoy :)\n'
                   'If you\'re bored try an image of yourself '
                   'and see what the model thinks.')
-            clip_embeddings = image_embeddings[:, :CLIP_MAX_TOKENS, :]
+            clip_embeddings = image_embeddings[:, :self.tokenizer.
+                                               model_max_length, :]
             d_emb = self.placeholder_embed[:, 0, :] - clip_embeddings[:, 0, :]
             # Move 85% towards the text header
             clip_embeddings[:, 0, :] += d_emb * 0.85

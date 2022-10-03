@@ -235,12 +235,21 @@ I've added a cap, default = 0.15 for modification of the header.
 Seems to work well. If you go to far.. like around 0.35 or so you'll start to
 get weird noise patterns.
 
+### Text2Text Blending
+
+Seems to work pretty easily since both are text and in a compatible format for
+SD's attention mechanism, tweening can be done with any of the provided methods
+so I just slapped a prompt in a tab, so you can toggle between one or the other.
+The end goal is to make this blends layerable with a better UI, if you're
+familiar with GIMP or Photoshop: just think of the layers and blend settings
+on them.. except in this case blend settings would only exist between layers.
+
 ## Experiments
 
 Everything here I've sourced from myself or https://lexica.art/ so there
 shouldn't be any copyright issues...
 
-All experiments were run with default settings and **seed** 1337 unless
+All experiments were run with the following settings and **seed** 1337 unless
 otherwise mentioned:
 - Diffusion Stength = 0.6
 - Steps = 30
@@ -248,10 +257,12 @@ otherwise mentioned:
 - Guidance Scale = 8
 - Init Height & Width = 512
 - Threshold Match Guidance = 0.25
+- Threshold Floor = 0.75
 - Clustered Match Guidance = 0.25
 - Linear Style Guidance Start = 0.0
 - Linear Style Guidance End = 0.5
 - Max Image Guidance = 0.35
+- Max Image Header Mult = 0.0
 - Optimal Fit Mapping with reused Latents
 
 ![Default Settings](experiments/settings.png)
@@ -365,7 +376,26 @@ This concept mapping is currently implemented after all these others as a sort
 of override. You do not need to turn those features off, but I did it to
 demonstrate.
 
-## Archived Experiments ( Need old version to replicate )
+### Text2Text tweening "an urban landscape, city, dslr photo"
+
+Using the following settings modifications:
+- Linear Start = 0.1
+
+Technically that's default at the time of writing this, but other experiments
+don't use it.
+
+#### Base Image
+
+![City Photos](experiments/city_photo.png)
+
+#### With Guide Text: "a painting of the deep woods, forest"
+Make sure to clear out any guide image if replicating...
+
+![Trees in City Painting](experiments/city_photo_forest_blend.png)
+
+Pretty neat!
+
+## Archived Experiments - pay close attention to replicate
 They are broken by the introduction of threshold floor or removal of
 modification to the "header" embedding.
 Header embedding modification has been readded, so it is possible to generate

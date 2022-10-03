@@ -2,7 +2,7 @@
 import math
 import os
 from time import time
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from typing import Any, List, Sequence, Tuple
 
 import torch
 from torch.autocast_mode import autocast
@@ -71,36 +71,36 @@ class Runner():
         self.generator = torch.Generator(device=device)
 
     def gen(self,
-            prompt: Union[str, List[str]] = '',
-            init_image: Optional[Image.Image] = None,
-            guide_image: Optional[Image.Image] = None,
+            prompt: str | List[str] = '',
+            init_image: Image.Image | None = None,
+            guide: Image.Image | str | None = None,
             init_size: Tuple[int, int] = (512, 512),
             mapping_concepts: str = '',
-            guide_image_threshold_mult: float = 0.5,
-            guide_image_threshold_floor: float = 0.5,
-            guide_image_clustered: float = 0.5,
-            guide_image_linear: Tuple = (0.0, 0.5),
-            guide_image_max_guidance: float = 0.5,
-            guide_image_header_max: float = 0.15,
-            guide_image_mode: int = 0,
-            guide_image_reuse: bool = True,
+            guide_threshold_mult: float = 0.5,
+            guide_threshold_floor: float = 0.5,
+            guide_clustered: float = 0.5,
+            guide_linear: Tuple = (0.0, 0.5),
+            guide_max_guidance: float = 0.5,
+            guide_header_max: float = 0.15,
+            guide_mode: int = 0,
+            guide_reuse: bool = True,
             strength: float = 0.6,
             steps: int = 10,
             guidance_scale: float = 8,
             samples: int = 1,
-            seed: Optional[int] = None,
+            seed: int | None = None,
             debug: bool = False):
 
         fp = f'i2i_ds{int(strength * 100)}' if init_image else 't2i'
-        if guide_image:
-            fp += (f'_itm{_i100(guide_image_threshold_mult)}'
-                   f'_itf{_i100(guide_image_threshold_floor)}'
-                   f'_ic{_i100(guide_image_clustered)}'
-                   f'_il{_i100(guide_image_linear[0])}'
-                   f'-{_i100(guide_image_linear[1])}'
-                   f'_mg{_i100(guide_image_max_guidance)}'
-                   f'_hm{_i100(guide_image_header_max)}'
-                   f'_im{guide_image_mode:d}')
+        if guide:
+            fp += (f'_itm{_i100(guide_threshold_mult)}'
+                   f'_itf{_i100(guide_threshold_floor)}'
+                   f'_ic{_i100(guide_clustered)}'
+                   f'_il{_i100(guide_linear[0])}'
+                   f'-{_i100(guide_linear[1])}'
+                   f'_mg{_i100(guide_max_guidance)}'
+                   f'_hm{_i100(guide_header_max)}'
+                   f'_im{guide_mode:d}')
         fp += f'_st{steps}_gs{int(guidance_scale)}'
 
         if not seed:
@@ -113,16 +113,16 @@ class Runner():
 
         guide_embeds = self.guide.embeds(
             prompt=prompt,
-            guide_image=guide_image,
+            guide=guide,
             mapping_concepts=mapping_concepts,
-            guide_image_threshold_mult=guide_image_threshold_mult,
-            guide_image_threshold_floor=guide_image_threshold_floor,
-            guide_image_clustered=guide_image_clustered,
-            guide_image_linear=guide_image_linear,
-            guide_image_max_guidance=guide_image_max_guidance,
-            guide_image_header_max=guide_image_header_max,
-            guide_image_mode=guide_image_mode,
-            guide_image_reuse=guide_image_reuse)
+            guide_threshold_mult=guide_threshold_mult,
+            guide_threshold_floor=guide_threshold_floor,
+            guide_clustered=guide_clustered,
+            guide_linear=guide_linear,
+            guide_max_guidance=guide_max_guidance,
+            guide_header_max=guide_header_max,
+            guide_mode=guide_mode,
+            guide_reuse=guide_reuse)
 
         all_images = []
         for _ in range(samples):

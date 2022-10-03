@@ -281,11 +281,11 @@ class Tweener():
 
 
 class ConceptMapper():
-    def __init__(self, image_embeddings: torch.Tensor,
+    def __init__(self, guide_embeddings: torch.Tensor,
                  concept_embeddings: torch.Tensor) -> None:
-        self.image_embeddings = image_embeddings
+        self.guide_embeddings = guide_embeddings
         self.concept_embeddings = concept_embeddings
-        self.concept_mappings = _map_emb(image_embeddings, concept_embeddings,
+        self.concept_mappings = _map_emb(guide_embeddings, concept_embeddings,
                                          False, GUIDE_ORDER_TEXT)
         # Print the result
         print(f'Image Feature and Concept alignment:')
@@ -311,7 +311,7 @@ class ConceptMapper():
             concept_image_i, concept_image_s = self.concept_mappings[cmi]
             concept_image_i = int(concept_image_i)
             if s > 0.9:
-                output_embeddings[0, txt_i] = self.image_embeddings[
+                output_embeddings[0, txt_i] = self.guide_embeddings[
                     0, concept_image_i]
             print(f'TxtTok {txt_i:>02d} ConceptTok '
                   f'{concept_i:>02d} {s:.2%} ImageTok '
@@ -397,49 +397,49 @@ class Guide():
 
     def embeds(self,
                prompt: str | List[str] = '',
-               guide_image: Image | None = None,
+               guide: Image | str | None = None,
                mapping_concepts: str = '',
-               guide_image_threshold_mult: float = 0.5,
-               guide_image_threshold_floor: float = 0.5,
-               guide_image_clustered: float = 0.5,
-               guide_image_linear: Tuple[float, float] = (0.0, 0.5),
-               guide_image_max_guidance: float = 0.5,
-               guide_image_header_max: float = 0.15,
-               guide_image_mode: int = GUIDE_ORDER_ALIGN,
-               guide_image_reuse: bool = True) -> torch.Tensor:
+               guide_threshold_mult: float = 0.5,
+               guide_threshold_floor: float = 0.5,
+               guide_clustered: float = 0.5,
+               guide_linear: Tuple[float, float] = (0.0, 0.5),
+               guide_max_guidance: float = 0.5,
+               guide_header_max: float = 0.15,
+               guide_mode: int = GUIDE_ORDER_ALIGN,
+               guide_reuse: bool = True) -> torch.Tensor:
         '''Generate embeddings from text or image or tween their space of\
             numbers.
 
         Args:
             prompt (str | List[str], optional): The guidance prompt. Defaults\
                 to ''.
-            guide_image (Image | None, optional): The guidance image. Defaults\
-                to None.
+            guide (Image | str | None, optional): The guidance image or text to\
+                blend with the prompt. Defaults to None.
             mapping_concepts (str, optional): Concepts to fully map from image.\
                 Defaults to ''.
-            guide_image_threshold_mult (float, optional): Multiplier for\
+            guide_threshold_mult (float, optional): Multiplier for\
                 alignment threshold tweening. Defaults to 0.5.
-            guide_image_threshold_floor (float, optional): Floor to accept\
+            guide_threshold_floor (float, optional): Floor to accept\
                 embeddings for threshold tweening based on their alignment.\
                 Defaults to 0.5.
-            guide_image_clustered (float, optional): A clustered match guidance\
+            guide_clustered (float, optional): A clustered match guidance\
                 approach, not as good as threshold but can make some minor\
                 adjustments. Defaults to 0.5.
-            guide_image_linear (Tuple[float, float], optional): Linear style\
+            guide_linear (Tuple[float, float], optional): Linear style\
                 blending first value mapped to the start of the prompt, the\
                 second is mapped to the end. Can be used to push the prompt\
                 towards the image at the front or back, or away from it.\
                 Defaults to (0.0, 0.5).
-            guide_image_max_guidance (float, optional): Cap on the overall\
+            guide_max_guidance (float, optional): Cap on the overall\
                 tweening, regardless of multiplier, does not affect mapping\
                 concepts. Defaults to 0.5.
-            guide_image_header_max (float, optional): Caps the manipulation of\
+            guide_header_max (float, optional): Caps the manipulation of\
                 the leading header token. Defaults to 0.15.
-            guide_image_mode (int, optional): Image guidance mode, to priorize\
+            guide_mode (int, optional): Image guidance mode, to priorize\
                 based on aligment first or text embedding order, effects most\
                 noticiable when playing with the `reuse` parameter. Defaults\
                 to GUIDE_ORDER_ALIGN.
-            guide_image_reuse (bool, optional): Allow re-mapping already mapped\
+            guide_reuse (bool, optional): Allow re-mapping already mapped\
                 image concepts, True will result in a best fit between image\
                 and text, but less "uniqueness". Defaults to True.
 
@@ -458,25 +458,29 @@ class Guide():
             raise ValueError(f'`prompt` has to be of type `str` '
                              f'or `list` but is {type(prompt)}')
 
-        if not prompt and guide_image is None:
+        if not prompt and guide is None:
             raise ValueError('No prompt, or guide image provided.')
 
         # Get embeddings and setup tweening and mapping
         text_embeddings: torch.Tensor | None = None
-        image_embeddings: torch.Tensor | None = None
+        guide_embeddings: torch.Tensor | None = None
         concept_mapper: ConceptMapper | None = None
         if prompt:
             # get prompt text embeddings
             text_embeddings = self.txt_emb(prompt)
-        if guide_image is not None:
-            image_embeddings = self.img_emb(guide_image)
-            if mapping_concepts:
-                concept_mapper = ConceptMapper(image_embeddings,
-                                               self.txt_emb(mapping_concepts))
-        tweener = Tweener(
-            (guide_image_threshold_floor, guide_image_threshold_mult),
-            guide_image_linear, guide_image_clustered, guide_image_max_guidance,
-            guide_image_header_max, guide_image_mode, guide_image_reuse)
+        if guide is not None:
+            if isinstance(guide, str):
+                guide = guide.strip()
+                if guide:
+                    guide_embeddings = self.txt_emb(guide)
+            else:
+                guide_embeddings = self.img_emb(guide)
+                if mapping_concepts:
+                    concept_mapper = ConceptMapper(
+                        guide_embeddings, self.txt_emb(mapping_concepts))
+        tweener = Tweener((guide_threshold_floor, guide_threshold_mult),
+                          guide_linear, guide_clustered, guide_max_guidance,
+                          guide_header_max, guide_mode, guide_reuse)
 
         def _tween(img_emb: torch.Tensor,
                    txt_emb: torch.Tensor) -> torch.Tensor:
@@ -492,34 +496,40 @@ class Guide():
 
         # Perform possible tweening based on available embeddings
         if text_embeddings is not None:
-            if image_embeddings is not None:
+            if guide_embeddings is not None:
                 if text_embeddings.shape[0] > 1:
                     # Batch
                     clip_embeddings = text_embeddings.clone()
                     # TODO-OPT: Vectorize??
                     for i, txt_emb in enumerate(text_embeddings):
-                        clip_embeddings[i] = _tween(image_embeddings, txt_emb)
+                        clip_embeddings[i] = _tween(guide_embeddings, txt_emb)
                 else:
                     # Solo
-                    clip_embeddings = _tween(image_embeddings, text_embeddings)
+                    clip_embeddings = _tween(guide_embeddings, text_embeddings)
             else:
                 clip_embeddings: torch.Tensor = text_embeddings
         else:
-            assert image_embeddings is not None
+            assert guide_embeddings is not None
             # Select the first self.tokenizer.model_max_length image embedding
             #   tokens only.
             # NOTE: This is not good guidance, StableDiffusion wasn't trained
             #   for this. We need to map to prompts.
             # TODO: Build a model that can resequence image embeddings to
             #   a similar structure as text, SEE: BLIP ?? No need for text tho.
-            print('Warning: trying to guide purely from image, '
-                  'this will generate weird stuff, enjoy :)\n'
-                  'If you\'re bored try an image of yourself '
-                  'and see what the model thinks.')
-            clip_embeddings = image_embeddings[:, :self.tokenizer.
-                                               model_max_length, :]
-            d_emb = self.placeholder_embed[:, 0, :] - clip_embeddings[:, 0, :]
-            # Move 85% towards the text header
-            clip_embeddings[:, 0, :] += d_emb * 0.85
+
+            if isinstance(guide, str):
+                print('Warning: using the guide like prompt.. just use prompt.')
+                clip_embeddings = guide_embeddings
+            else:
+                print('Warning: trying to guide purely from image, '
+                      'this will generate weird stuff, enjoy :)\n'
+                      'If you\'re bored try an image of yourself '
+                      'and see what the model thinks.')
+                clip_embeddings = guide_embeddings[:, :self.tokenizer.
+                                                   model_max_length, :]
+                d_emb = self.placeholder_embed[:, 0, :] - clip_embeddings[:,
+                                                                          0, :]
+                # Move 85% towards the text header
+                clip_embeddings[:, 0, :] += d_emb * 0.85
 
         return clip_embeddings

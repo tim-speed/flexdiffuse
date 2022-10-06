@@ -169,10 +169,11 @@ def block(runner: Callable[[], utils.Runner]):
                               step=64,
                               label="Init Width",
                               value=512)
-            guide_image_mode = gr.Radio(label='Mapping Priority',
-                                        choices=['Text Order', 'Optimal Fit'],
-                                        value='Optimal Fit',
-                                        type='index')
+            guide_image_mode = gr.Radio(
+                label='Mapping Priority',
+                choices=['Text Order', 'Best Fit', 'Direct'],
+                value='Optimal Fit',
+                type='index')
             with gr.Group(elem_id='cbgroup'):
                 guide_image_reuse = gr.Checkbox(label='Reuse Latents',
                                                 value=True)

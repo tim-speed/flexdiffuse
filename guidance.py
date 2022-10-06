@@ -17,36 +17,37 @@ MAX_SINGLE_DIM = 512 # for stable diffusion image
 
 GUIDE_ORDER_TEXT = 0
 GUIDE_ORDER_ALIGN = 1
+GUIDE_ORDER_DIRECT = 2
 
 
-def _map_emb(img_emb: torch.Tensor,
+def _map_emb(alt_emb: torch.Tensor,
              txt_emb: torch.Tensor,
-             img_emb_reuse: bool = True,
+             alt_emb_reuse: bool = True,
              guide_order: int = GUIDE_ORDER_ALIGN) -> np.ndarray:
-    '''Map the provided image embeddings with the provided text embeddings,\
+    '''Map the provided alternate embeddings with the provided text embeddings,\
         according to the provided params to their highest alignment match.
 
     Args:
-        img_emb (torch.Tensor): The image embeddings.
+        alt_emb (torch.Tensor): The alternate embeddings.
         txt_emb (torch.Tensor): The text embeddings.
-        img_emb_reuse (bool, optional): Image embedding reuse, True allows\
+        alt_emb_reuse (bool, optional): Alternate embedding reuse, True allows\
             embeddings to be allocated to multiple text embeddings, otherwise\
             they will be used once, based on `guide_order`. Defaults to True.
         guide_order (int, optional): Guide order, prioritize text order or \
             best aligment? Defaults to GUIDE_ORDER_ALIGN.
 
     Returns:
-        np.ndarray: The mappings of shape(MAX_TOKENS-1, 2): (Image_embed_index,\
+        np.ndarray: The mappings of shape(MAX_TOKENS-1, 2): (alt_embed_index,\
             Alignment)
     '''
-    imgft = img_emb / img_emb.norm(dim=-1, keepdim=True)
+    altft = alt_emb / alt_emb.norm(dim=-1, keepdim=True)
     txtft = txt_emb / txt_emb.norm(dim=-1, keepdim=True)
     # All token matches is 256 * 77: imf_i, tf_i alignment
     all_matches: List[Tuple[int, int, float]] = []
     # TODO-OPT: Can probably vectorize this
-    for i, iimgft in enumerate(imgft[0, :]):
-        iimgft = iimgft.unsqueeze(0)
-        similarity = (100.0 * (iimgft @ txtft.mT)).softmax(dim=-1)
+    for i, ialtft in enumerate(altft[0, :]):
+        ialtft = ialtft.unsqueeze(0)
+        similarity = (100.0 * (ialtft @ txtft.mT)).softmax(dim=-1)
         # Enumerate matches and similarity, we remove the first index here
         #   so our range goes from 0:MAX_TOKENS -> 1:MAX_TOKENS-1
         #   to ignore the header token.
@@ -56,21 +57,31 @@ def _map_emb(img_emb: torch.Tensor,
     if guide_order == GUIDE_ORDER_TEXT:
         # sort: asc text feature, desc alignment, asc image feature
         all_matches.sort(key=lambda t: (t[1], -t[2], t[0]))
+    elif guide_order == GUIDE_ORDER_DIRECT:
+        # Sort only by token ids
+        # TODO-OPT: this can be optimized by preselecting pairs before running
+        #   similarity.. no extra comparisons.. no sort needed..
+        all_matches.sort(key=lambda t: (t[1], t[0]))
+        mapped_tokens = np.zeros((txt_emb.shape[1], 2))
+        for alt_i, txt_i, s in all_matches:
+            if alt_i == txt_i:
+                mapped_tokens[txt_i] = (alt_i, s)
+        return mapped_tokens
     else:
         # sort: desc alignment, asc text feature, asc image feature
         all_matches.sort(key=lambda t: (-t[2], t[1], t[0]))
-    # Now map the img token per text token, without reusing tokens
+    # Now map the alt token per text token, without reusing tokens
     #   and skipping the first token, as it is a header not meant to
     #   be changed.
     mapped_tokens = np.zeros((txt_emb.shape[1], 2))
-    img_toks_used: Set[int] = set()
+    alt_toks_used: Set[int] = set()
     # TODO-OPT: Optimize
-    for img_i, txt_i, s in all_matches:
-        if mapped_tokens[txt_i, 1] > 0 or img_i in img_toks_used:
+    for alt_i, txt_i, s in all_matches:
+        if mapped_tokens[txt_i, 1] > 0 or alt_i in alt_toks_used:
             continue
-        mapped_tokens[txt_i] = (img_i, s)
-        if not img_emb_reuse:
-            img_toks_used.add(img_i)
+        mapped_tokens[txt_i] = (alt_i, s)
+        if not alt_emb_reuse:
+            alt_toks_used.add(alt_i)
     return mapped_tokens
 
 

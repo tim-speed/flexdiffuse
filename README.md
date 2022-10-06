@@ -359,6 +359,8 @@ the first prompt.
 
 ![Creepy Tree](experiments/creepy_tree.png)
 
+#### After applying modifier
+
 ![Creepy Tree Mapped](experiments/creepy_tree_mapped.png)
 
 By specifying "creepy tree" in the second prompt and using the modifier image
@@ -396,17 +398,19 @@ Make sure to clear out any guide image if replicating...
 Pretty neat!
 
 ## Archived Experiments - pay close attention to replicate
-They are broken by the introduction of threshold floor or removal of
-modification to the "header" embedding.
-Header embedding modification has been readded, so it is possible to generate
-these again, I just need to go through and find the ideal settings as its now
-an adjustable cap.
+
+    They are broken by the introduction of threshold floor or removal of
+    modification to the "header" embedding.
+    Header embedding modification has been readded, so it is possible to generate
+    these again, I just need to go through and find the ideal settings as its now
+    an adjustable cap.
 
 
 ### Img2Img Zeus portrait to Anime?
-The introduction of threshold floor has broken the exact replication of this
-generation, as the auto calculated similarity or alignment used for this is
-not enabled as a setting, I believe it is 0.1663 ...
+
+    The introduction of threshold floor has broken the exact replication of this
+    generation, as the auto calculated similarity or alignment used for this is
+    not enabled as a setting, I believe it is 0.1663 ...
 
 Initial Image:
 https://lexica.art/prompt/6aed4d25-a58e-4461-bc7e-883f90acb6ed
@@ -415,8 +419,8 @@ https://lexica.art/prompt/6aed4d25-a58e-4461-bc7e-883f90acb6ed
 
 #### Img2Img: "anime portrait of a strong, masculine old man with a curly white beard and blue eyes, anime drawing"
 
-Cranking *Diffusion Strength up to 0.7* here to get more of a transformation
-and *Steps to 40*
+    Cranking *Diffusion Strength up to 0.7* here to get more of a transformation
+    and *Steps to 40*
 
 ![Anime Zeus](experiments/zeus_anime.png)
 
@@ -462,31 +466,30 @@ https://lexica.art/prompt/e1fdbf56-a71c-43eb-ac4b-347bacf7c496
 
 #### Tuned Settings
 
-- Threshold = -0.25
-- Clustered = 0.0
-- Linear End = 1.0
-- Max Image Guidance = 1.0
+    - Threshold = -0.25
+    - Clustered = 0.0
+    - Linear End = 1.0
+    - Max Image Guidance = 1.0
 
 ![Generated with tuned settings](experiments/turtle_tuned.png)
 
-You can see we've guided the generation from this seed in a new direction while
-keeping true to the prompt.
+    You can see we've guided the generation from this seed in a new direction
+    while keeping true to the prompt.
 
-Explanation ( Guess ):
-- Negative Threshold setting moves us away from matched concepts between prompt
-    and image in linear space.
-- High Linear setting moves us towards minor stylistic details, fidelity,
-    texture, color...
+    Explanation ( Guess ):
+    - Negative Threshold setting moves us away from matched concepts between prompt
+        and image in linear space.
+    - High Linear setting moves us towards minor stylistic details, fidelity,
+        texture, color...
 
-## Future Work
+### Composition, text??
 
-- Cleanup UI
-- Intersecting features of multiple images on prompt embeddings.
-- Support for negative prompts
-- Text based composition research... eventually implement something that can
-    replace the need for drawing tool integrations for those comfortable with
-    a language ( natural or otherwise ) guided approach.. the ideal end state
-    of this may be similar to a programming language:
+    Goal: Text based composition research... eventually implement something that
+    can replace the need for drawing tool integrations for those comfortable
+    with a language ( natural or otherwise ) guided approach.. the ideal end
+    state of this may be similar to a programming language:
+
+#### Research
     - From my friend Dom:
         - https://primer.ought.org/
         - https://arxiv.org/abs/1909.05858
@@ -495,6 +498,75 @@ Explanation ( Guess ):
         - "You can also take the pyramid approach that is popular in retreival
             and summarization where you have multiple seperate embeddings and
             have a “fusion” component that is trained to compose them"
+    - From StableDiffusion Discord:
+        - https://openreview.net/forum?id=PUIqjT4rzq7
+
+#### Determination
+
+    After reviewing the work titled: **"Training-Free Structured Diffusion
+    Guidance for Compositional Text-to-Image Synthesis"** ...
+
+    I have come to the conclusion that the model architecture of Stable
+    Diffusion most likely cannot support complex composition through embedding
+    instructions without sacrificing other components in the model..
+
+    Case being: many artists have unrealistic styles that ignore the rules of
+    stationary real world physics ( 3d positioning, scale, rotation .. ) the
+    model's ability to transfer these styles between foreground and background
+    concepts is one of its strengths and directly conflicts with its ability to
+    hold an accurate representation.
+
+    While it may be possible to train or modify Stable Diffusion to do both I
+    believe it's current architecture is likely not "deep" or complex enough
+    to do both well; as composition in a physical sense requires it's own style
+    transfer in how the physics are perceived.
+
+    I believe this may be better if a model were able to have a sort of 3d
+    understanding of an image, and then be able to transfer style between
+    different interpretations of 3d physics...
+
+    But for now I have Stable Diffusion, and one way to treat it, is as a brush,
+    A brush that can handle single subject and background environmental concepts
+    pretty well, and I believe I should use that brush on a canvas.
+    Many people have been using the image editor plugins released for Krita,
+    Gimp, Phototshop ... but these plugins are designed for "on the fly" use
+    during a drawing session, the magic of writing some words and generating an
+    image is somewhat lost, though they are a very powerful addition to the
+    digital artists toolset.
+
+    I intend to develop a simple meta language, for composing images, and
+    leveraging the prompt / embedding tweening things I've built. The purpose
+    is to built repeatable, cloneable and easy to modify instruction sets that
+    generate high quality images leveraging stable diffusion.
+
+    It may be that Stable Diffusion improves in composition tasks soon, but this
+    proposed meta language should be capable of then stitching together those
+    compositions into even more complex ones, or to compose complex 3d scenes,
+    worlds, etc using the 3d diffusion models that will arive.. all of these
+    will be powered by prompts, embeddings, latents.. and will require
+    composition in a similar way.
+
+#### How
+
+    CLIP latent space can be used as a 2d canvas.. the space is 1/8th the output
+    in pixels, so it is highly compressed, but I believe we can build a larger
+    canvas and target specific points on it with different prompts in different
+    stages, and using the same technique for image2image, we can reintroduce
+    noise in specific areas and regenerate concepts, as a blended sort of
+    inpainting.
+
+We can arrange concepts through an ordered language:
+```
+"A forest scene"
+. "A bear facing left"
+> "A hunter pointing a gun to the left"
+```
+
+## Future Work
+
+- Cleanup UI
+- Intersecting features of multiple images on prompt embeddings.
+- Support for negative prompts
 - Integrate Textual Inversion in an easy to use way
 - Dissect BLIP and StableDiffusion training, and build an algorithm or model
     that can order CLIP image embeddings to be usable by Stable Diffusion.

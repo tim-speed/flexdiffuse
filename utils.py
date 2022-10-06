@@ -13,7 +13,11 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipeline
 from diffusers.schedulers import DDIMScheduler
 
 from guidance import Guide
-from pipeline import FlexPipeline
+from composition.guide import CompositeGuide
+from composition.schema import EntitySchema, Schema
+from encode.clip import CLIPEncoder
+from pipeline.flex import FlexPipeline
+from pipeline.guide import GuideBase, SimpleGuide
 
 MAX_SEED = 2147483647
 
@@ -66,9 +70,46 @@ class Runner():
         self.pipe = FlexPipeline(sd.vae, clip, sd.tokenizer, sd.unet,
                                  sd.scheduler).to(device)
         self.eta = 0
+        self.encoder = CLIPEncoder(clip, self.pipe.tokenizer)
         self.guide = Guide(clip, self.pipe.tokenizer, device=device)
         self.device = device
         self.generator = torch.Generator(device=device)
+
+    def _set_seed(self, seed: int | None):
+        if not seed:
+            seed = int(torch.randint(0, MAX_SEED, (1,))[0])
+        else:
+            seed = min(max(seed, 0), MAX_SEED)
+        self.generator.manual_seed(seed)
+
+    def _run(self, batches: int, guide: GuideBase,
+             init_image: Image.Image | None, init_size: Tuple[int, int],
+             strength: float, debug: bool,
+             fp: str) -> Tuple[List[Image.Image], Image.Image]:
+        all_images = []
+        for _ in range(batches):
+            with autocast(self.device):
+                stime = time()
+                ms_time = int(stime * 1000)
+                with torch.no_grad():
+                    output = self.pipe(guide=guide,
+                                       init_image=init_image,
+                                       init_size=init_size,
+                                       strength=strength,
+                                       generator=self.generator,
+                                       eta=self.eta,
+                                       debug=debug)
+                images = output['sample'] # type: ignore
+                self.eta = time() - stime
+                for i, img in enumerate(images):
+                    img.save(f'{output_dir}/{ms_time:>013d}_{i:>02d}_{fp}.png',
+                             format='png')
+            all_images.extend(images)
+
+        ms_time = int(time() * 1000)
+        grid = image_grid(all_images)
+        grid.save(f'{grid_dir}/{ms_time:>013d}_{fp}.png', format='png')
+        return all_images, grid
 
     def gen(self,
             prompt: str | List[str] = '',
@@ -102,14 +143,10 @@ class Runner():
                    f'_hm{_i100(guide_header_max)}'
                    f'_im{guide_mode:d}')
         fp += f'_st{steps}_gs{int(guidance_scale)}'
-
-        if not seed:
-            seed = int(torch.randint(0, MAX_SEED, (1,))[0])
-            assert seed is not None
-        else:
-            seed = min(max(seed, 0), MAX_SEED)
+        if seed:
             fp += f'_se{seed}'
-        self.generator.manual_seed(seed)
+
+        self._set_seed(seed)
 
         guide_embeds = self.guide.embeds(
             prompt=prompt,
@@ -123,30 +160,42 @@ class Runner():
             guide_header_max=guide_header_max,
             guide_mode=guide_mode,
             guide_reuse=guide_reuse)
+        pipeline_guide = SimpleGuide(self.encoder, self.pipe.unet,
+                                     guidance_scale, steps, guide_embeds)
+        return self._run(samples, pipeline_guide, init_image, init_size,
+                         strength, debug, fp)
 
-        all_images = []
-        for _ in range(samples):
-            with autocast(self.device):
-                stime = time()
-                ms_time = int(stime * 1000)
-                with torch.no_grad():
-                    output = self.pipe(clip_embeddings=guide_embeds,
-                                       init_image=init_image,
-                                       init_size=init_size,
-                                       strength=strength,
-                                       num_inference_steps=steps,
-                                       guidance_scale=guidance_scale,
-                                       generator=self.generator,
-                                       eta=self.eta,
-                                       debug=debug)
-                images = output['sample'] # type: ignore
-                self.eta = time() - stime
-                for i, img in enumerate(images):
-                    img.save(f'{output_dir}/{ms_time:>013d}_{i:>02d}_{fp}.png',
-                             format='png')
-            all_images.extend(images)
+    def compose(self,
+                bg_prompt: str = '',
+                entities_df: List[List[Any]] = [],
+                start_style: str = '',
+                end_style: str = '',
+                style_blend: Tuple[float, float] = (0.0, 1.0),
+                init_image: Image.Image | None = None,
+                batches: int = 4,
+                strength: float = 0.7,
+                steps: int = 30,
+                guidance_scale: float = 8.0,
+                init_size: Tuple[int, int] = (512, 512),
+                seed: int | None = None,
+                debug: bool = False):
 
-        ms_time = int(time() * 1000)
-        grid = image_grid(all_images)
-        grid.save(f'{grid_dir}/{ms_time:>013d}_{fp}.png', format='png')
-        return all_images, grid
+        fp = f'ci2i_ds{int(strength * 100)}' if init_image else 'ct2i'
+        fp += f'_st{steps}_gs{int(guidance_scale)}'
+        if seed:
+            fp += f'_se{seed}'
+
+        self._set_seed(seed)
+
+        def _row_to_ent(row: List[Any]) -> EntitySchema:
+            return EntitySchema(str(row[0]), (int(row[1]), int(row[2])),
+                                (int(row[3]), int(row[4])), float(row[5]))
+
+        if hasattr(entities_df, '_values'):
+            entities_df = entities_df._values # type: ignore
+        schema = Schema(bg_prompt, start_style, end_style, style_blend,
+                        [_row_to_ent(r) for r in entities_df])
+        pipeline_guide = CompositeGuide(self.encoder, self.pipe.unet,
+                                        guidance_scale, schema, steps)
+        return self._run(batches, pipeline_guide, init_image, init_size,
+                         strength, debug, fp)

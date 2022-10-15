@@ -5,10 +5,13 @@ import gradio as gr
 import utils
 from composition.schema import EntitySchema, Schema
 
-DEFAULT_SCHEMA = Schema('A forest', 'Photo', 'Painting', (0.0, 1.0), [
-    EntitySchema('A bear', (16, 128), (256, 256)),
-    EntitySchema('A deer', (288, 160), (192, 192))
-])
+DEFAULT_SCHEMA = Schema('A forest with a bear and a deer', 'Photo', 'Painting',
+                        (0.0, 1.0), [
+                            EntitySchema('A bear in the forest', (0, 256),
+                                         (256, 256)),
+                            EntitySchema('A deer in the forest', (256, 256),
+                                         (256, 256))
+                        ])
 
 
 def unpack(e: object) -> List[Any]:
@@ -137,7 +140,7 @@ def block(runner: Callable[[], utils.Runner]):
             with gr.Row():
                 seed = gr.Number(label='Seed',
                                  precision=0,
-                                 value=0,
+                                 value=1337,
                                  interactive=True)
                 debug = gr.Checkbox(label='Export Debug Images', value=False)
                 generate: gr.Button = gr.Button(value='Generate image',

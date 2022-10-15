@@ -41,26 +41,58 @@ class CompositeGuide(GuideBase):
         self.schema = schema
         self.embeds = encode_schema(schema, encoder)
         self.batch_size = batch_size
+        self.classifier_free_guidance = self.guidance > 1.0
+        if self.classifier_free_guidance:
+            # Combine uncond then clip embeds into one stack
+            self.embed_tensor = torch.cat(
+                ([self.uncond_embeds] * self.batch_size) + [
+                    self.embeds.background_embed,
+                    *[e.embed for e in self.embeds.entities]
+                ])
+        else:
+            self.embed_tensor = torch.cat([
+                self.embeds.background_embed,
+                *[e.embed for e in self.embeds.entities]
+            ])
 
     def _guide_latents(self, latents: torch.Tensor, embeds: torch.Tensor,
                        step: int) -> torch.FloatTensor:
-        classifier_free_guidance = self.guidance > 1.0
-        if classifier_free_guidance:
-            # Combine uncond then clip embeds into one stack
-            embeds = torch.cat(([self.uncond_embeds] * self.batch_size)
-                               + [embeds])
-            in_latents = torch.cat([latents] * 2)
-        else:
-            in_latents = latents
+        in_latents = torch.cat([latents] * self.embed_tensor.shape[0])
         # run unet on all uncond and clip embeds
-        noise_pred = self.unet(in_latents, step,
-                               encoder_hidden_states=embeds).sample
-        if classifier_free_guidance:
+        noise_pred = self.unet(in_latents,
+                               step,
+                               encoder_hidden_states=self.embed_tensor).sample
+        # Combine all in order of declaration
+        if self.classifier_free_guidance:
+            noise_stack = noise_pred[self.batch_size:] # First batch is uncod
+        else:
+            noise_stack = noise_pred
+        # Combine
+        batch_noise = noise_stack[:self.batch_size]
+        entity_noise = noise_stack[self.batch_size:]
+        for i in range(self.batch_size):
+            bi_noise_pred = batch_noise[i:i + 1, :, :, :]
+            # Blend entity noise onto each item in batch noise
+            for ei, e in enumerate(self.embeds.entities):
+                # latents is shape (batch, channel, height, width)
+                ow, oh = e.offset_blocks # Offset
+                sw, sh = e.size_blocks # Size
+                bw, bh = (ow + sw, oh + sh) # Box
+                # Select noise shape
+                ens = entity_noise[ei:ei + 1, :, oh:bh, ow:bw]
+                # Blend
+                bgs = bi_noise_pred[:, :, oh:bh, ow:bw]
+                bi_noise_pred[:, :, oh:bh, ow:bw] = bgs + e.blend * (ens - bgs)
+            # Set back in batch noise
+            batch_noise[i:i + 1, :, :, :] = bi_noise_pred
+
+        if self.classifier_free_guidance:
             # Combine the unconditioned guidance with the clip guidance for bg
-            noise_pred_uncond, noise_pred_clip = noise_pred.chunk(2)
-            noise_pred = noise_pred_uncond + self.guidance * (
-                noise_pred_clip - noise_pred_uncond)
-        return noise_pred
+            noise_pred_uncond = noise_pred[:self.batch_size]
+            batch_noise = noise_pred_uncond + self.guidance * (
+                batch_noise - noise_pred_uncond)
+
+        return batch_noise
 
     def noise_pred(self, latents: torch.Tensor, step: int) -> torch.FloatTensor:
         # noise_pred.shape == latents.shape after chunking
@@ -89,19 +121,19 @@ class CompositeGuide(GuideBase):
         # TODO: Handle style blending
         bg_noise_pred = self._guide_latents(latents, bg_embeds, step)
 
-        # Run and map all entities
-        for e in self.embeds.entities:
-            # latents is shape (batch, channel, height, width)
-            ow, oh = e.offset_blocks # Offset
-            sw, sh = e.size_blocks # Size
-            bw, bh = (ow + sw, oh + sh) # Box
-            l = latents[:, :, oh:bh, ow:bw]
-            # Upscale before guiding latents as SD works at 512x512
-            ul = _upscale(l)
-            enp = self._guide_latents(ul, e.embed, step)
-            # Downscale back and blend
-            denp = _scale(enp, (sh, sw))
-            bgs = bg_noise_pred[:, :, oh:bh, ow:bw]
-            bg_noise_pred[:, :, oh:bh, ow:bw] = bgs + e.blend * (denp - bgs)
+        # # Run and map all entities
+        # for e in self.embeds.entities:
+        #     # latents is shape (batch, channel, height, width)
+        #     ow, oh = e.offset_blocks # Offset
+        #     sw, sh = e.size_blocks # Size
+        #     bw, bh = (ow + sw, oh + sh) # Box
+        #     l = latents[:, :, oh:bh, ow:bw]
+        #     # Upscale before guiding latents as SD works at 512x512
+        #     ul = _upscale(l)
+        #     enp = self._guide_latents(ul, e.embed, step)
+        #     # Downscale back and blend
+        #     denp = _scale(enp, (sh, sw))
+        #     bgs = bg_noise_pred[:, :, oh:bh, ow:bw]
+        #     bg_noise_pred[:, :, oh:bh, ow:bw] = bgs + e.blend * (denp - bgs)
 
         return bg_noise_pred

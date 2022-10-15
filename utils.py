@@ -187,14 +187,20 @@ class Runner():
 
         self._set_seed(seed)
 
-        def _row_to_ent(row: List[Any]) -> EntitySchema:
-            return EntitySchema(str(row[0]), (int(row[1]), int(row[2])),
-                                (int(row[3]), int(row[4])), float(row[5]))
+        def _row_to_ent(row: List[Any]) -> EntitySchema | None:
+            try:
+                return EntitySchema(
+                    str(row[0]).strip(), (int(row[1]), int(row[2])),
+                    (int(row[3]), int(row[4])), float(row[5]))
+            except Exception as ex:
+                print('Failed to build EntitySchema:', ex)
+                return None
 
         if hasattr(entities_df, '_values'):
             entities_df = entities_df._values # type: ignore
-        schema = Schema(bg_prompt, start_style, end_style, style_blend,
-                        [_row_to_ent(r) for r in entities_df])
+        rows = [_row_to_ent(r) for r in entities_df]
+        rows = [r for r in rows if r and r.prompt]
+        schema = Schema(bg_prompt, start_style, end_style, style_blend, rows)
         pipeline_guide = CompositeGuide(self.encoder, self.pipe.unet,
                                         guidance_scale, schema, steps)
         return self._run(batches, pipeline_guide, init_image, init_size,

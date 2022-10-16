@@ -19,7 +19,7 @@ from diffusers.schedulers import (DDIMScheduler, LMSDiscreteScheduler,
                                   PNDMScheduler)
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 
-from guidance import preprocess
+from encode.clip import preprocess
 from pipeline.guide import GuideBase
 
 
